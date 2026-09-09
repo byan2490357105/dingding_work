@@ -18,14 +18,24 @@
     </el-menu>
     <el-card class="box-card">
       <p>Hello {{ username }}</p>
-      <el-button
-        v-show="isLogin"
-        type="primary"
-        size="large"
-        @click="goNotes"
-      >
-        随手记
-      </el-button>
+      <div class="home-actions">
+        <el-button
+          v-show="isLogin"
+          type="primary"
+          size="large"
+          @click="goNotes"
+        >
+          随手记
+        </el-button>
+        <el-button
+          v-show="isLogin"
+          type="primary"
+          size="large"
+          @click="goTodo"
+        >
+          待办任务
+        </el-button>
+      </div>
     </el-card>
   </div>
 </template>
@@ -65,7 +75,20 @@ export default {
     // 跳转随手记页面
     goNotes() {
       this.$router.push('/notes')
+    },
+    // 跳转待办任务页面
+    goTodo() {
+      this.$router.push('/todo')
     }
   }
 }
 </script>
+
+<style scoped>
+.home-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+</style>

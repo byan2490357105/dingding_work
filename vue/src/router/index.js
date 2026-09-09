@@ -3,6 +3,7 @@ import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import Notes from '../views/Notes.vue'
+import Todo from '../views/Todo.vue'
 
 const router = createRouter({
   // 保持与原项目一致的 hash 模式
@@ -24,6 +25,14 @@ const router = createRouter({
         requireAuth: true // 随手记需要登录
       },
       component: Notes
+    },
+    {
+      path: '/todo',
+      name: 'todo',
+      meta: {
+        requireAuth: true // 待办任务需要登录
+      },
+      component: Todo
     },
     {
       path: '/login',
