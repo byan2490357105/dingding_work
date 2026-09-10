@@ -39,6 +39,17 @@ public class TodoDTO {
     /** 是否置顶 */
     private Boolean top;
 
+    /** 是否已完成（持久化字段，可由“标记完成/取消完成”接口修改） */
+    private Boolean completed;
+
+    /**
+     * 派生状态（只读，由后端计算）：
+     * 已完成：is_completed = 1；
+     * 逾期：未完成且 endTime 已过；
+     * 进行中：未完成且未到截止时间。
+     */
+    private String status;
+
     /** 标签 */
     private String label;
 

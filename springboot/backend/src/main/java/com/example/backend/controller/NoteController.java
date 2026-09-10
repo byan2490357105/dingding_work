@@ -38,6 +38,12 @@ public class NoteController {
         return Result.success(noteService.listMyNotes(currentUsername(request)));
     }
 
+    /** 查看笔记详情 */
+    @GetMapping("/{id}")
+    public Result<Note> detail(@PathVariable Long id, HttpServletRequest request) {
+        return Result.success(noteService.getNote(currentUsername(request), id));
+    }
+
     /** 新建笔记 */
     @PostMapping
     public Result<Note> create(@RequestBody NoteDTO dto, HttpServletRequest request) {
@@ -57,11 +63,31 @@ public class NoteController {
         return Result.success("操作成功", null);
     }
 
-    /** 删除笔记（逻辑删除） */
+    /** 删除笔记（逻辑删除，进入回收站） */
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id, HttpServletRequest request) {
         noteService.deleteNote(currentUsername(request), id);
-        return Result.success("删除成功", null);
+        return Result.success("已移入回收站", null);
+    }
+
+    /** 查看回收站笔记列表 */
+    @GetMapping("/trash")
+    public Result<List<Note>> trash(HttpServletRequest request) {
+        return Result.success(noteService.listDeletedNotes(currentUsername(request)));
+    }
+
+    /** 从回收站恢复笔记 */
+    @PutMapping("/restore/{id}")
+    public Result<Void> restore(@PathVariable Long id, HttpServletRequest request) {
+        noteService.restoreNote(currentUsername(request), id);
+        return Result.success("恢复成功", null);
+    }
+
+    /** 彻底删除笔记（不可恢复） */
+    @DeleteMapping("/permanent/{id}")
+    public Result<Void> permanentDelete(@PathVariable Long id, HttpServletRequest request) {
+        noteService.permanentlyDeleteNote(currentUsername(request), id);
+        return Result.success("已彻底删除", null);
     }
 
     /** 从请求中取出 JWT 拦截器解析出的用户名 */

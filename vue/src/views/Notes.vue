@@ -1,12 +1,5 @@
 <template>
   <div class="notes-page">
-    <el-menu :default-active="activeIndex" class="el-menu-demo" mode="horizontal">
-      <el-menu-item index="1" @click="$router.push('/')">主页</el-menu-item>
-      <el-menu-item index="2">
-        <span style="font-weight: 600">随手记</span>
-      </el-menu-item>
-    </el-menu>
-
     <div class="notes-body">
       <!-- 工具栏：新建笔记按钮 -->
       <div class="notes-toolbar">
@@ -16,43 +9,69 @@
         </el-button>
       </div>
 
-      <!-- 置顶笔记 -->
-      <div class="section">
-        <h3 class="section-title">
-          <el-icon><Top /></el-icon> 置顶笔记
-          <el-tag size="small" type="warning" round>{{ pinnedNotes.length }}</el-tag>
-        </h3>
-        <el-empty v-if="pinnedNotes.length === 0" description="暂无置顶笔记" :image-size="60" />
-        <el-row :gutter="16">
-          <el-col v-for="note in pinnedNotes" :key="note.id" :span="8">
-            <note-card
-              :note="note"
-              @edit="openEdit"
-              @toggle-pin="togglePin"
-              @remove="removeNote"
-            />
-          </el-col>
-        </el-row>
-      </div>
+      <el-tabs v-model="activeTab" class="notes-tabs" @tab-change="onTabChange">
+        <el-tab-pane label="我的笔记" name="notes">
+          <!-- 置顶笔记 -->
+          <div class="section">
+            <h3 class="section-title">
+              <el-icon><Top /></el-icon> 置顶笔记
+              <el-tag size="small" type="warning" round>{{ pinnedNotes.length }}</el-tag>
+            </h3>
+            <el-empty v-if="pinnedNotes.length === 0" description="暂无置顶笔记" :image-size="60" />
+            <el-row :gutter="16">
+              <el-col v-for="note in pinnedNotes" :key="note.id" :span="8">
+                <note-card
+                  :note="note"
+                  @view="openView"
+                  @edit="openEdit"
+                  @toggle-pin="togglePin"
+                  @remove="removeNote"
+                />
+              </el-col>
+            </el-row>
+          </div>
 
-      <!-- 未置顶笔记 -->
-      <div class="section">
-        <h3 class="section-title">
-          <el-icon><Document /></el-icon> 全部笔记
-          <el-tag size="small" type="info" round>{{ normalNotes.length }}</el-tag>
-        </h3>
-        <el-empty v-if="normalNotes.length === 0" description="还没有笔记，点击上方“新建笔记”开始记录吧" :image-size="60" />
-        <el-row :gutter="16">
-          <el-col v-for="note in normalNotes" :key="note.id" :span="8">
-            <note-card
-              :note="note"
-              @edit="openEdit"
-              @toggle-pin="togglePin"
-              @remove="removeNote"
-            />
-          </el-col>
-        </el-row>
-      </div>
+          <!-- 未置顶笔记 -->
+          <div class="section">
+            <h3 class="section-title">
+              <el-icon><Document /></el-icon> 全部笔记
+              <el-tag size="small" type="info" round>{{ normalNotes.length }}</el-tag>
+            </h3>
+            <el-empty v-if="normalNotes.length === 0" description="还没有笔记，点击上方新建笔记开始记录吧" :image-size="60" />
+            <el-row :gutter="16">
+              <el-col v-for="note in normalNotes" :key="note.id" :span="8">
+                <note-card
+                  :note="note"
+                  @view="openView"
+                  @edit="openEdit"
+                  @toggle-pin="togglePin"
+                  @remove="removeNote"
+                />
+              </el-col>
+            </el-row>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane :label="`回收站(${trashNotes.length})`" name="trash">
+          <el-empty v-if="trashNotes.length === 0" description="回收站是空的" :image-size="80" />
+          <el-row v-else :gutter="16">
+            <el-col v-for="note in trashNotes" :key="note.id" :span="8">
+              <div class="trash-card">
+                <div class="trash-card-head">
+                  <span class="trash-title">{{ note.title }}</span>
+                  <el-tag v-if="note.tag" size="small" type="info" effect="plain">{{ note.tag }}</el-tag>
+                </div>
+                <div class="trash-card-content" v-html="note.content"></div>
+                <div class="trash-card-time">修改于 {{ formatDetailTime(note.updateTime) }}</div>
+                <div class="trash-card-actions">
+                  <el-button size="small" type="success" plain @click="restoreNote(note)">恢复</el-button>
+                  <el-button size="small" type="danger" plain @click="permanentlyDeleteNote(note)">彻底删除</el-button>
+                </div>
+              </div>
+            </el-col>
+          </el-row>
+        </el-tab-pane>
+      </el-tabs>
     </div>
 
     <!-- 新建 / 编辑 弹窗 -->
@@ -107,6 +126,25 @@
         <el-button type="primary" :loading="saving" @click="saveNote">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 笔记详情弹窗 -->
+    <el-dialog v-model="detailVisible" title="笔记详情" width="680px">
+      <div v-if="detail" class="note-detail">
+        <h2 class="detail-title">{{ detail.title }}</h2>
+        <div class="detail-meta">
+          <el-tag v-if="detail.tag" size="small" type="success" effect="plain">{{ detail.tag }}</el-tag>
+          <el-tag v-if="detail.isPinned === 1" size="small" type="warning" effect="plain">已置顶</el-tag>
+          <span>创建：{{ formatDetailTime(detail.createTime) }}</span>
+          <span>修改：{{ formatDetailTime(detail.updateTime) }}</span>
+        </div>
+        <el-divider />
+        <div class="detail-content" v-html="detail.content || '<span style=\'color:#909399\'>（无内容）</span>'"></div>
+      </div>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+        <el-button type="primary" @click="editFromDetail">编辑</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -119,12 +157,15 @@ export default {
   components: { Top, Document, EditPen, NoteCard },
   data() {
     return {
-      activeIndex: '2',
       // 默认标签
       defaultTags: ['学习', '生活', '科研', '出行'],
+      activeTab: 'notes',
       pinnedNotes: [],
       normalNotes: [],
+      trashNotes: [],
       dialogVisible: false,
+      detailVisible: false,
+      detail: null,
       saving: false,
       form: {
         id: null,
@@ -136,8 +177,15 @@ export default {
   },
   created() {
     this.fetchNotes()
+    this.fetchTrash()
   },
   methods: {
+    // 切换 Tab 时刷新回收站
+    onTabChange(tab) {
+      if (tab === 'trash') {
+        this.fetchTrash()
+      }
+    },
     // 拉取当前用户笔记（后端按置顶/未置顶分为两个列表）
     async fetchNotes() {
       try {
@@ -151,6 +199,40 @@ export default {
           this.$message.error('加载笔记失败')
         }
       }
+    },
+
+    // 查看笔记详情：请求后端获取最新详情
+    async openView(note) {
+      try {
+        const res = await this.$http.get(`/api/notes/${note.id}`)
+        if (res.data.code === 200) {
+          this.detail = res.data.data
+          this.detailVisible = true
+        } else {
+          this.$message.error(res.data.message || '加载详情失败')
+        }
+      } catch (err) {
+        if (!err.response || err.response.status !== 401) {
+          this.$message.error('加载详情失败')
+        }
+      }
+    },
+
+    // 从详情弹窗直接进入编辑
+    editFromDetail() {
+      const note = this.detail
+      this.detailVisible = false
+      this.openEdit(note)
+    },
+
+    // 详情时间格式化（兼容 ISO 字符串与数组）
+    formatDetailTime(t) {
+      if (!t) return ''
+      if (Array.isArray(t)) {
+        const [y, m, d, hh = 0, mm = 0] = t
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+      }
+      return String(t).replace('T', ' ').slice(0, 16)
     },
 
     openCreate() {
@@ -228,7 +310,7 @@ export default {
     },
 
     removeNote(note) {
-      this.$confirm('确定删除这条笔记吗？', '提示', {
+      this.$confirm('确定删除这条笔记吗？删除后可在回收站找回。', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
@@ -236,8 +318,56 @@ export default {
         try {
           const res = await this.$http.delete(`/api/notes/${note.id}`)
           if (res.data.code === 200) {
-            this.$message.success('删除成功')
+            this.$message.success('已移入回收站')
             this.fetchNotes()
+            this.fetchTrash()
+          }
+        } catch (err) {
+          this.$message.error('删除失败')
+        }
+      }).catch(() => {})
+    },
+
+    // 拉取回收站笔记列表
+    async fetchTrash() {
+      try {
+        const res = await this.$http.get('/api/notes/trash')
+        if (res.data.code === 200) {
+          this.trashNotes = res.data.data || []
+        }
+      } catch (err) {
+        // 忽略 401（拦截器统一处理）
+      }
+    },
+
+    // 从回收站恢复笔记
+    async restoreNote(note) {
+      try {
+        const res = await this.$http.put(`/api/notes/restore/${note.id}`)
+        if (res.data.code === 200) {
+          this.$message.success('恢复成功')
+          this.fetchTrash()
+          this.fetchNotes()
+        } else {
+          this.$message.error(res.data.message || '恢复失败')
+        }
+      } catch (err) {
+        this.$message.error('恢复失败')
+      }
+    },
+
+    // 彻底删除笔记（不可恢复）
+    permanentlyDeleteNote(note) {
+      this.$confirm(`确定彻底删除笔记"${note.title}"吗？此操作不可恢复！`, '危险操作', {
+        confirmButtonText: '彻底删除',
+        cancelButtonText: '取消',
+        type: 'error'
+      }).then(async () => {
+        try {
+          const res = await this.$http.delete(`/api/notes/permanent/${note.id}`)
+          if (res.data.code === 200) {
+            this.$message.success('已彻底删除')
+            this.fetchTrash()
           }
         } catch (err) {
           this.$message.error('删除失败')
@@ -291,6 +421,36 @@ export default {
   border-radius: 4px;
   overflow: hidden;
 }
+.note-detail {
+  text-align: left;
+}
+.detail-title {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  word-break: break-word;
+}
+.detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #909399;
+}
+.detail-content {
+  max-height: 50vh;
+  overflow-y: auto;
+  line-height: 1.8;
+  word-break: break-word;
+}
+.detail-content :deep(img) {
+  max-width: 100%;
+}
+.detail-content :deep(ul),
+.detail-content :deep(ol) {
+  padding-left: 24px;
+}
 .rich-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -314,5 +474,45 @@ export default {
 .rich-content :deep(ul),
 .rich-content :deep(ol) {
   padding-left: 24px;
+}
+/* 回收站卡片 */
+.trash-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+  background: #fafafa;
+  opacity: 0.85;
+}
+.trash-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.trash-title {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trash-card-content {
+  min-height: 40px;
+  max-height: 120px;
+  overflow: hidden;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+.trash-card-time {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 10px;
+}
+.trash-card-actions {
+  display: flex;
+  gap: 8px;
 }
 </style>

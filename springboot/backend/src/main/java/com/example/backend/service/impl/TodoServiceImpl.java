@@ -1,6 +1,7 @@
 package com.example.backend.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.example.backend.dto.TodoDTO;
 import com.example.backend.entity.Todo;
 import com.example.backend.entity.User;
@@ -31,6 +32,7 @@ public class TodoServiceImpl implements TodoService {
         Long userId = requireUserId(username);
         LambdaQueryWrapper<Todo> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
                 .orderByDesc(Todo::getTop)
                 .orderByDesc(Todo::getUpdatedAt);
         return todoMapper.selectList(queryWrapper).stream()
@@ -48,11 +50,33 @@ public class TodoServiceImpl implements TodoService {
         applyDTO(todo, todoDTO);
         todo.setUserId(userId);
         todo.setDeleted(false);
+        // 新建任务默认未完成
+        todo.setCompleted(false);
         todo.setCreatedAt(now);
         // 未修改时修改时间等于创建时间
         todo.setUpdatedAt(now);
 
         todoMapper.insert(todo);
+        return toDTO(todo);
+    }
+
+    @Override
+    public TodoDTO getTodo(String username, Long id) {
+        Long userId = requireUserId(username);
+        Todo todo = todoMapper.selectById(id);
+        checkOwnership(todo, userId);
+        return toDTO(todo);
+    }
+
+    @Override
+    public TodoDTO updateCompleted(String username, Long id, boolean completed) {
+        Long userId = requireUserId(username);
+        Todo todo = todoMapper.selectById(id);
+        checkOwnership(todo, userId);
+
+        todo.setCompleted(completed);
+        todo.setUpdatedAt(currentMinuteTime());
+        todoMapper.updateById(todo);
         return toDTO(todo);
     }
 
@@ -78,7 +102,58 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = todoMapper.selectById(id);
         checkOwnership(todo, userId);
 
-        // @TableLogic：实际执行的是 UPDATE is_deleted = 1
+        // 逻辑删除：UPDATE todo SET is_deleted = 1 WHERE id = ? AND user_id = ?
+        LambdaUpdateWrapper<Todo> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Todo::getId, id)
+                .eq(Todo::getUserId, userId)
+                .set(Todo::getDeleted, true);
+        todoMapper.update(null, wrapper);
+    }
+
+    @Override
+    public List<TodoDTO> listDeletedTodos(String username) {
+        Long userId = requireUserId(username);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, true)
+                .orderByDesc(Todo::getUpdatedAt);
+        return todoMapper.selectList(wrapper).stream()
+                .map(this::toDTO)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void restoreTodo(String username, Long id) {
+        Long userId = requireUserId(username);
+        // 校验该待办在回收站中且属于当前用户
+        LambdaQueryWrapper<Todo> query = new LambdaQueryWrapper<>();
+        query.eq(Todo::getId, id)
+                .eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, true);
+        Todo todo = todoMapper.selectOne(query);
+        if (todo == null) {
+            throw new BusinessException("回收站中没有该待办");
+        }
+        // 恢复：UPDATE todo SET is_deleted = 0 WHERE id = ?
+        LambdaUpdateWrapper<Todo> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Todo::getId, id)
+                .set(Todo::getDeleted, false);
+        todoMapper.update(null, wrapper);
+    }
+
+    @Override
+    public void permanentlyDeleteTodo(String username, Long id) {
+        Long userId = requireUserId(username);
+        // 校验该待办在回收站中且属于当前用户
+        LambdaQueryWrapper<Todo> query = new LambdaQueryWrapper<>();
+        query.eq(Todo::getId, id)
+                .eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, true);
+        Todo todo = todoMapper.selectOne(query);
+        if (todo == null) {
+            throw new BusinessException("回收站中没有该待办");
+        }
+        // 彻底删除：真实 DELETE FROM todo WHERE id = ?
         todoMapper.deleteById(id);
     }
 
@@ -91,10 +166,13 @@ public class TodoServiceImpl implements TodoService {
         return user.getId();
     }
 
-    /** 校验待办必须属于当前用户 */
+    /** 校验待办必须属于当前用户且未被删除 */
     private void checkOwnership(Todo todo, Long userId) {
         if (todo == null || !userId.equals(todo.getUserId())) {
             throw new BusinessException(404, "待办不存在或无权操作");
+        }
+        if (Boolean.TRUE.equals(todo.getDeleted())) {
+            throw new BusinessException(404, "待办不存在或已删除");
         }
     }
 
@@ -155,10 +233,28 @@ public class TodoServiceImpl implements TodoService {
         dto.setDaily(todo.getDaily());
         dto.setRepeatUntil(todo.getRepeatUntil());
         dto.setTop(todo.getTop());
+        dto.setCompleted(Boolean.TRUE.equals(todo.getCompleted()));
+        dto.setStatus(deriveStatus(todo));
         dto.setLabel(todo.getLabel());
         dto.setCreatedAt(todo.getCreatedAt());
         dto.setUpdatedAt(todo.getUpdatedAt());
         return dto;
+    }
+
+    /**
+     * 派生任务状态：
+     * 已完成：is_completed = 1（即使已过截止时间也显示已完成）；
+     * 逾期：未完成且截止时间早于当前时间；
+     * 进行中：其余情况。
+     */
+    private String deriveStatus(Todo todo) {
+        if (Boolean.TRUE.equals(todo.getCompleted())) {
+            return "已完成";
+        }
+        if (todo.getEndTime() != null && todo.getEndTime().isBefore(LocalDateTime.now())) {
+            return "逾期";
+        }
+        return "进行中";
     }
 
     /** 创建/修改时间精确到分钟 */

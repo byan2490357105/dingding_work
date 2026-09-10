@@ -1,16 +1,17 @@
 <template>
   <el-card class="note-card" shadow="hover">
     <div class="note-head">
-      <span class="note-title" :title="note.title">{{ note.title }}</span>
+      <span class="note-title note-title-link" :title="note.title" @click="$emit('view', note)">{{ note.title }}</span>
       <el-tag v-if="note.tag" size="small" type="success" effect="plain">{{ note.tag }}</el-tag>
     </div>
 
     <!-- 富文本内容（内容为本人编辑，v-html 直接渲染） -->
-    <div class="note-content" v-html="note.content"></div>
+    <div class="note-content" v-html="note.content" @click="$emit('view', note)"></div>
 
     <div class="note-foot">
       <span class="note-time">{{ formatTime(note.updateTime) }}</span>
       <div class="note-actions">
+        <el-button size="small" @click="$emit('view', note)">详情</el-button>
         <el-button
           size="small"
           :type="note.isPinned === 1 ? 'warning' : 'default'"
@@ -73,7 +74,14 @@ function pad(n) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.note-title-link {
+  cursor: pointer;
+}
+.note-title-link:hover {
+  color: var(--el-color-primary);
+}
 .note-content {
+  cursor: pointer;
   min-height: 40px;
   max-height: 160px;
   overflow: hidden;

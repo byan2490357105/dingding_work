@@ -20,6 +20,11 @@ public interface NoteService {
     Map<String, List<Note>> listMyNotes(String username);
 
     /**
+     * 查看笔记详情（仅能查看属于当前登录用户的笔记）。
+     */
+    Note getNote(String username, Long noteId);
+
+    /**
      * 新建笔记。用户不存在则不能创建。
      */
     Note createNote(String username, NoteDTO dto);
@@ -38,4 +43,13 @@ public interface NoteService {
      * 删除笔记（逻辑删除）。
      */
     void deleteNote(String username, Long noteId);
+
+    /** 查询回收站中的笔记 */
+    List<Note> listDeletedNotes(String username);
+
+    /** 从回收站恢复笔记 */
+    void restoreNote(String username, Long noteId);
+
+    /** 彻底删除笔记（不可恢复） */
+    void permanentlyDeleteNote(String username, Long noteId);
 }

@@ -9,6 +9,16 @@ public interface TodoService {
     /** 查询当前用户所有未删除待办，置顶优先 */
     List<TodoDTO> listByUsername(String username);
 
+    /** 查看待办详情（仅能查看属于当前用户的待办） */
+    TodoDTO getTodo(String username, Long id);
+
+    /**
+     * 设置待办完成状态（已完成 / 取消完成）。
+     *
+     * @param completed true 标记为已完成，false 取消完成
+     */
+    TodoDTO updateCompleted(String username, Long id, boolean completed);
+
     /** 新建待办 */
     TodoDTO createTodo(String username, TodoDTO todoDTO);
 
@@ -17,4 +27,13 @@ public interface TodoService {
 
     /** 逻辑删除待办 */
     void deleteTodo(String username, Long id);
+
+    /** 查询回收站中的待办 */
+    List<TodoDTO> listDeletedTodos(String username);
+
+    /** 从回收站恢复待办 */
+    void restoreTodo(String username, Long id);
+
+    /** 彻底删除待办（不可恢复） */
+    void permanentlyDeleteTodo(String username, Long id);
 }

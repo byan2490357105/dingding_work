@@ -1,12 +1,25 @@
 <template>
   <div id="app">
-    <router-view></router-view>
+    <!-- 全局独立导航/个人中心：路由跳转时始终显示，登录、注册页隐藏 -->
+    <nav-bar v-if="!isAuthPage"></nav-bar>
+    <main class="app-main">
+      <router-view></router-view>
+    </main>
   </div>
 </template>
 
 <script>
+import NavBar from './components/NavBar.vue'
+
 export default {
-  name: 'App'
+  name: 'App',
+  components: { NavBar },
+  computed: {
+    isAuthPage() {
+      const path = this.$route.path
+      return path === '/login' || path === '/register'
+    }
+  }
 }
 </script>
 
@@ -15,8 +28,11 @@ export default {
   font-family: 'Avenir', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-align: center;
   color: #2c3e50;
+  min-height: 100vh;
+}
+.app-main {
+  min-height: calc(100vh - 60px);
 }
 h1, h2 {
   font-weight: normal;

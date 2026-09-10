@@ -1,21 +1,5 @@
 <template>
-  <div>
-    <el-menu :default-active="activeIndex" class="el-menu-demo" mode="horizontal">
-      <el-menu-item index="1"><router-link to="/">主页</router-link></el-menu-item>
-      <el-menu-item index="2" style="margin-left: auto">
-        <router-link v-show="!isLogin" to="/login">登录</router-link>
-        <el-dropdown @command="loginOut">
-          <span style="color: #fff" v-show="isLogin">
-            {{ username }}
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command>登出</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </el-menu-item>
-    </el-menu>
+  <div class="home-page">
     <el-card class="box-card">
       <p>Hello {{ username }}</p>
       <div class="home-actions">
@@ -41,15 +25,10 @@
 </template>
 
 <script>
-import { mapActions, mapGetters, mapState } from 'vuex'
+import { mapGetters, mapState } from 'vuex'
 
 export default {
   name: 'Home',
-  data() {
-    return {
-      activeIndex: '1'
-    }
-  },
   computed: {
     ...mapState(['username', 'token']),
     ...mapGetters(['isLogin'])
@@ -65,13 +44,6 @@ export default {
       })
   },
   methods: {
-    ...mapActions(['userLoginOut']),
-    // 登出
-    loginOut() {
-      this.userLoginOut()
-      this.$router.replace('/login')
-      this.$message.success('登出成功')
-    },
     // 跳转随手记页面
     goNotes() {
       this.$router.push('/notes')
@@ -85,6 +57,13 @@ export default {
 </script>
 
 <style scoped>
+.home-page {
+  padding: 30px 20px;
+}
+.box-card {
+  max-width: 720px;
+  margin: 0 auto;
+}
 .home-actions {
   display: flex;
   justify-content: center;
