@@ -31,9 +31,15 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // /api/** 默认都需要携带有效 Token，登录和注册接口放行
+        // /api/** 默认都需要携带有效 Token，登录/注册/第三方回调等公开接口放行
         registry.addInterceptor(jwtInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/token/login", "/api/token/register");
+                .excludePathPatterns(
+                        "/api/token/login",
+                        "/api/token/register",
+                        "/api/third-party/providers",
+                        "/api/third-party/*/authorize-url",
+                        "/api/third-party/*/callback",
+                        "/api/third-party/exchange");
     }
 }

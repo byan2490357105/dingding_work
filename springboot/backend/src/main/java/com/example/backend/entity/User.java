@@ -14,4 +14,7 @@ public class User {
 
     private String username;
     private String password;
+
+    /** 手机号（钉钉等第三方登录返回，用于手机号绑定登录） */
+    private String phone;
 }

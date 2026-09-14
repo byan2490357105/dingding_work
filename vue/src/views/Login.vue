@@ -24,6 +24,21 @@
             </router-link>
           </el-form-item>
         </el-form>
+        <el-divider>第三方登录</el-divider>
+        <div class="third-party-login">
+          <el-button
+            v-for="provider in providers"
+            :key="provider.provider"
+            type="primary"
+            plain
+            @click="thirdPartyLogin(provider.provider)"
+          >
+            {{ provider.displayName }}登录（扫码 / 手机号）
+          </el-button>
+          <el-text v-if="providers.length === 0" type="info">
+            暂无可用的第三方登录，请先在后台配置应用密钥
+          </el-text>
+        </div>
       </el-col>
     </el-row>
   </el-card>
@@ -61,8 +76,12 @@ export default {
         password: [
           { validator: checkPassword, trigger: 'blur' }
         ]
-      }
+      },
+      providers: []
     }
+  },
+  created() {
+    this.loadProviders()
   },
   methods: {
     ...mapActions(['userLogin']),
@@ -101,7 +120,40 @@ export default {
     // 表单重置
     resetForm() {
       this.$refs['formLogin'].resetFields()
+    },
+    // 加载已启用的第三方登录平台
+    loadProviders() {
+      this.$http.get('/api/third-party/providers')
+        .then(res => {
+          if (res.data.code === 200) {
+            this.providers = res.data.data || []
+          }
+        })
+        .catch(() => {})
+    },
+    // 跳转第三方授权页（钉钉登录页同时提供扫码登录与手机号登录）
+    thirdPartyLogin(provider) {
+      this.$http.get(`/api/third-party/${provider}/authorize-url`)
+        .then(res => {
+          if (res.data.code === 200 && res.data.data) {
+            window.location.href = res.data.data
+          } else {
+            this.$message.error(res.data.message || '发起第三方登录失败')
+          }
+        })
+        .catch(err => {
+          this.$message.error((err.response && err.response.data && err.response.data.message) || err.message)
+        })
     }
   }
 }
 </script>
+
+<style scoped>
+.third-party-login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+</style>

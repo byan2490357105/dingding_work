@@ -4,6 +4,10 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import Notes from '../views/Notes.vue'
 import Todo from '../views/Todo.vue'
+import OAuthCallback from '../views/OAuthCallback.vue'
+import Bindings from '../views/Bindings.vue'
+import Profile from '../views/Profile.vue'
+import DingTalkSheets from '../views/DingTalkSheets.vue'
 
 const router = createRouter({
   // 保持与原项目一致的 hash 模式
@@ -33,6 +37,35 @@ const router = createRouter({
         requireAuth: true // 待办任务需要登录
       },
       component: Todo
+    },
+    {
+      path: '/oauth/callback',
+      name: 'oauthCallback',
+      component: OAuthCallback
+    },
+    {
+      path: '/settings/profile',
+      name: 'profile',
+      meta: {
+        requireAuth: true // 账号设置需要登录
+      },
+      component: Profile
+    },
+    {
+      path: '/settings/bindings',
+      name: 'bindings',
+      meta: {
+        requireAuth: true // 账号绑定需要登录
+      },
+      component: Bindings
+    },
+    {
+      path: '/dingtalk/sheets',
+      name: 'dingtalkSheets',
+      meta: {
+        requireAuth: true // 钉钉表格需要登录
+      },
+      component: DingTalkSheets
     },
     {
       path: '/login',

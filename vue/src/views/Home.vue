@@ -19,6 +19,13 @@
         >
           待办任务
         </el-button>
+        <el-button
+          v-show="isLogin"
+          size="large"
+          @click="$router.push('/settings/bindings')"
+        >
+          账号绑定
+        </el-button>
       </div>
     </el-card>
   </div>

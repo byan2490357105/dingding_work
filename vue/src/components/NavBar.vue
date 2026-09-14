@@ -34,6 +34,12 @@
                 <el-dropdown-item disabled class="info-item">
                   <el-icon><User /></el-icon>&nbsp;{{ username }}
                 </el-dropdown-item>
+                <el-dropdown-item divided command="profile">
+                  <el-icon><Setting /></el-icon>&nbsp;账号设置
+                </el-dropdown-item>
+                <el-dropdown-item command="bindings">
+                  <el-icon><Connection /></el-icon>&nbsp;账号绑定
+                </el-dropdown-item>
                 <el-dropdown-item divided command="logout" class="logout-item">
                   <el-icon><SwitchButton /></el-icon>&nbsp;退出登录
                 </el-dropdown-item>
@@ -49,11 +55,11 @@
 
 <script>
 import { mapGetters, mapState, mapActions } from 'vuex'
-import { Notebook, ArrowDown, User, SwitchButton } from '@element-plus/icons-vue'
+import { Notebook, ArrowDown, User, SwitchButton, Connection, Setting } from '@element-plus/icons-vue'
 
 export default {
   name: 'NavBar',
-  components: { Notebook, ArrowDown, User, SwitchButton },
+  components: { Notebook, ArrowDown, User, SwitchButton, Connection, Setting },
   computed: {
     ...mapState(['username']),
     ...mapGetters(['isLogin']),
@@ -79,7 +85,11 @@ export default {
     },
     // 下拉指令：退出登录 —— 独立控件，任何页面都可用
     onCommand(command) {
-      if (command === 'logout') {
+      if (command === 'profile') {
+        this.$router.push('/settings/profile')
+      } else if (command === 'bindings') {
+        this.$router.push('/settings/bindings')
+      } else if (command === 'logout') {
         this.$confirm('确定退出登录吗？', '提示', {
           confirmButtonText: '退出',
           cancelButtonText: '取消',
