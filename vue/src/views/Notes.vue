@@ -1,12 +1,20 @@
 <template>
   <div class="notes-page">
     <div class="notes-body">
-      <!-- 工具栏：新建笔记按钮 -->
+      <!-- 工具栏：新建笔记 + 导出 -->
       <div class="notes-toolbar">
         <h2 class="page-title">我的随手记</h2>
-        <el-button type="primary" size="large" @click="openCreate">
-          <el-icon><EditPen /></el-icon>&nbsp;新建笔记
-        </el-button>
+        <div class="toolbar-actions">
+          <el-button size="large" :loading="exportingCsv" @click="exportCsv">
+            <el-icon><Download /></el-icon>&nbsp;导出CSV
+          </el-button>
+          <el-button size="large" type="success" plain :loading="exportingWord" @click="exportWord">
+            <el-icon><Document /></el-icon>&nbsp;导出Word
+          </el-button>
+          <el-button type="primary" size="large" @click="openCreate">
+            <el-icon><EditPen /></el-icon>&nbsp;新建笔记
+          </el-button>
+        </div>
       </div>
 
       <el-tabs v-model="activeTab" class="notes-tabs" @tab-change="onTabChange">
@@ -149,12 +157,12 @@
 </template>
 
 <script>
-import { Top, Document, EditPen } from '@element-plus/icons-vue'
+import { Top, Document, EditPen, Download } from '@element-plus/icons-vue'
 import NoteCard from '../components/NoteCard.vue'
 
 export default {
   name: 'Notes',
-  components: { Top, Document, EditPen, NoteCard },
+  components: { Top, Document, EditPen, Download, NoteCard },
   data() {
     return {
       // 默认标签
@@ -163,6 +171,8 @@ export default {
       pinnedNotes: [],
       normalNotes: [],
       trashNotes: [],
+      exportingCsv: false,
+      exportingWord: false,
       dialogVisible: false,
       detailVisible: false,
       detail: null,
@@ -198,6 +208,51 @@ export default {
         if (!err.response || err.response.status !== 401) {
           this.$message.error('加载笔记失败')
         }
+      }
+    },
+
+    // 通用文件下载：blob 方式请求（自动携带 Token），从响应头解析文件名
+    async downloadFile(url, fallbackName, tip) {
+      const res = await this.$http.get(url, { responseType: 'blob' })
+      const disposition = res.headers['content-disposition'] || ''
+      let filename = fallbackName
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+      if (match) {
+        filename = decodeURIComponent(match[1])
+      }
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(res.data)
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+      this.$message.success(tip)
+    },
+    // 导出笔记 CSV
+    async exportCsv() {
+      this.exportingCsv = true
+      try {
+        await this.downloadFile('/api/notes/export/csv', '笔记导出.csv', '笔记已导出为 CSV 文件')
+      } catch (err) {
+        if (!err.response || err.response.status !== 401) {
+          this.$message.error('导出失败，请稍后重试')
+        }
+      } finally {
+        this.exportingCsv = false
+      }
+    },
+    // 导出笔记 Word
+    async exportWord() {
+      this.exportingWord = true
+      try {
+        await this.downloadFile('/api/notes/export/word', '随手记.docx', '笔记已导出为 Word 文档')
+      } catch (err) {
+        if (!err.response || err.response.status !== 401) {
+          this.$message.error('导出失败，请稍后重试')
+        }
+      } finally {
+        this.exportingWord = false
       }
     },
 
@@ -397,6 +452,11 @@ export default {
   justify-content: space-between;
   margin-bottom: 20px;
   padding: 4px 0;
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .page-title {
   margin: 0;

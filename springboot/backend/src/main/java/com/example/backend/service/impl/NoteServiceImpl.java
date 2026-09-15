@@ -167,6 +167,16 @@ public class NoteServiceImpl implements NoteService {
         noteMapper.deleteById(noteId);
     }
 
+    @Override
+    public List<Note> listForExport(String username) {
+        Long userId = requireUserId(username);
+        // 置顶优先，其余按创建时间倒序
+        return noteMapper.selectList(baseWrapper(userId)
+                .orderByDesc(Note::getIsPinned)
+                .orderByDesc(Note::getCreateTime)
+                .orderByDesc(Note::getId));
+    }
+
     // ==================== 私有辅助方法 ====================
 
     /** 基础查询条件：当前用户 + 未删除 */

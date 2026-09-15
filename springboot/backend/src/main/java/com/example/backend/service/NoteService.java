@@ -52,4 +52,7 @@ public interface NoteService {
 
     /** 彻底删除笔记（不可恢复） */
     void permanentlyDeleteNote(String username, Long noteId);
+
+    /** 导出用：查询当前用户所有未删除笔记（置顶优先） */
+    List<Note> listForExport(String username);
 }

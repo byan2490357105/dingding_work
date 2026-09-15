@@ -6,6 +6,9 @@
       <div>
         <el-button type="primary" @click="openCreate">新建待办</el-button>
         <el-button :loading="loading" @click="loadTodos">刷新</el-button>
+        <el-button type="success" plain :loading="exporting" @click="exportCsv">
+          <el-icon><Download /></el-icon>&nbsp;导出待办
+        </el-button>
       </div>
       <el-tag v-if="username" type="info" effect="plain">{{ username }} 的待办</el-tag>
     </div>
@@ -316,6 +319,7 @@
 
 <script>
 import { mapState } from 'vuex'
+import { Download } from '@element-plus/icons-vue'
 import RichEditor from '../components/RichEditor.vue'
 
 const DEFAULT_TAGS = ['学习', '生活', '科研', '出行']
@@ -337,6 +341,7 @@ function defaultForm() {
 export default {
   name: 'TodoPage',
   components: {
+    Download,
     RichEditor
   },
   data() {
@@ -346,6 +351,7 @@ export default {
       activeTab: 'todos',
       loading: false,
       saving: false,
+      exporting: false,
       dialogVisible: false,
       detailVisible: false,
       detail: null,
@@ -386,6 +392,33 @@ export default {
     onTabChange(tab) {
       if (tab === 'trash') {
         this.fetchTrash()
+      }
+    },
+    // 导出待办 CSV：blob 方式请求（自动携带 Token），从响应头解析文件名
+    async exportCsv() {
+      this.exporting = true
+      try {
+        const res = await this.$http.get('/api/todo/export/csv', { responseType: 'blob' })
+        const disposition = res.headers['content-disposition'] || ''
+        let filename = '待办导出.csv'
+        const match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+        if (match) {
+          filename = decodeURIComponent(match[1])
+        }
+        const link = document.createElement('a')
+        link.href = URL.createObjectURL(res.data)
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(link.href)
+        this.$message.success('待办已导出为 CSV 文件')
+      } catch (err) {
+        if (!err.response || err.response.status !== 401) {
+          this.$message.error('导出失败，请稍后重试')
+        }
+      } finally {
+        this.exporting = false
       }
     },
     async loadTodos() {

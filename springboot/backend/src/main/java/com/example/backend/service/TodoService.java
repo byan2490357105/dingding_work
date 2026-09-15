@@ -1,6 +1,7 @@
 package com.example.backend.service;
 
 import com.example.backend.dto.TodoDTO;
+import com.example.backend.entity.Todo;
 
 import java.util.List;
 
@@ -36,4 +37,7 @@ public interface TodoService {
 
     /** 彻底删除待办（不可恢复） */
     void permanentlyDeleteTodo(String username, Long id);
+
+    /** 导出用：查询当前用户所有未删除待办（置顶优先），返回实体 */
+    List<Todo> listForExport(String username);
 }

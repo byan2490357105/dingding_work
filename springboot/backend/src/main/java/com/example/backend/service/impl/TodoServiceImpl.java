@@ -157,6 +157,18 @@ public class TodoServiceImpl implements TodoService {
         todoMapper.deleteById(id);
     }
 
+    @Override
+    public List<Todo> listForExport(String username) {
+        Long userId = requireUserId(username);
+        // 置顶优先，其余按创建时间倒序
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
+                .orderByDesc(Todo::getTop)
+                .orderByDesc(Todo::getCreatedAt);
+        return todoMapper.selectList(wrapper);
+    }
+
     /** 通过登录用户名找到数据库中的 user.id；用户不存在则不能创建待办 */
     private Long requireUserId(String username) {
         User user = userService.getByUsername(username);

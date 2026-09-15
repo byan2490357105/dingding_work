@@ -2,7 +2,9 @@ package com.example.backend.controller;
 
 import com.example.backend.common.Result;
 import com.example.backend.dto.TodoDTO;
+import com.example.backend.entity.Todo;
 import com.example.backend.service.TodoService;
+import com.example.backend.util.ExportUtil;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.servlet.http.HttpServletResponse;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -96,5 +100,27 @@ public class TodoController {
                                         @PathVariable("id") Long id) {
         todoService.permanentlyDeleteTodo(username, id);
         return Result.success("已彻底删除", null);
+    }
+
+    /** 导出当前用户所有待办为 CSV 文件（表头：待办标题/待办内容/待办开始时间/待办结束时间/标签/创建时间） */
+    @GetMapping("/export/csv")
+    public void exportCsv(@RequestAttribute("username") String username,
+                          HttpServletResponse response) throws Exception {
+        List<Todo> todos = todoService.listForExport(username);
+        List<String[]> rows = new ArrayList<>();
+        for (Todo todo : todos) {
+            rows.add(new String[]{
+                    todo.getTitle() == null ? "" : todo.getTitle(),
+                    ExportUtil.htmlToText(todo.getContent()),
+                    ExportUtil.formatMinute(todo.getStartTime()),
+                    ExportUtil.formatMinute(todo.getEndTime()),
+                    todo.getLabel() == null ? "" : todo.getLabel(),
+                    ExportUtil.formatMinute(todo.getCreatedAt())
+            });
+        }
+        byte[] data = ExportUtil.toCsv(
+                new String[]{"待办标题", "待办内容", "待办开始时间", "待办结束时间", "标签", "创建时间"}, rows);
+        ExportUtil.writeToResponse(response, data, "text/csv;charset=UTF-8",
+                "待办导出_" + ExportUtil.timestamp() + ".csv");
     }
 }

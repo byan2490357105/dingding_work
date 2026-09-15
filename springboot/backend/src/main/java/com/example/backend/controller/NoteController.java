@@ -4,6 +4,7 @@ import com.example.backend.common.Result;
 import com.example.backend.dto.NoteDTO;
 import com.example.backend.entity.Note;
 import com.example.backend.service.NoteService;
+import com.example.backend.util.ExportUtil;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -88,6 +91,39 @@ public class NoteController {
     public Result<Void> permanentDelete(@PathVariable Long id, HttpServletRequest request) {
         noteService.permanentlyDeleteNote(currentUsername(request), id);
         return Result.success("已彻底删除", null);
+    }
+
+    /** 导出当前用户所有笔记为 CSV 文件（表头：标题/笔记内容/创建时间/标签） */
+    @GetMapping("/export/csv")
+    public void exportCsv(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        List<Note> notes = noteService.listForExport(currentUsername(request));
+        List<String[]> rows = new ArrayList<>();
+        for (Note note : notes) {
+            rows.add(new String[]{
+                    nz(note.getTitle()),
+                    ExportUtil.htmlToText(note.getContent()),
+                    ExportUtil.formatMinute(note.getCreateTime()),
+                    nz(note.getTag())
+            });
+        }
+        byte[] data = ExportUtil.toCsv(
+                new String[]{"标题", "笔记内容", "创建时间", "标签"}, rows);
+        ExportUtil.writeToResponse(response, data, "text/csv;charset=UTF-8",
+                "笔记导出_" + ExportUtil.timestamp() + ".csv");
+    }
+
+    /** 导出当前用户所有笔记为 Word 文档（二级标题 + 同行时间标签 + 正文1.5倍行距宋体小五） */
+    @GetMapping("/export/word")
+    public void exportWord(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        List<Note> notes = noteService.listForExport(currentUsername(request));
+        byte[] data = ExportUtil.notesToWord(notes);
+        ExportUtil.writeToResponse(response, data,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "随手记_" + ExportUtil.timestamp() + ".docx");
+    }
+
+    private String nz(String value) {
+        return value == null ? "" : value;
     }
 
     /** 从请求中取出 JWT 拦截器解析出的用户名 */
