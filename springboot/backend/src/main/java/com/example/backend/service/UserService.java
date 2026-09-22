@@ -2,6 +2,8 @@ package com.example.backend.service;
 
 import com.example.backend.entity.User;
 
+import java.util.List;
+
 public interface UserService {
     /** 判断用户名是否已被注册 */
     boolean isUsernameExists(String username);
@@ -38,6 +40,17 @@ public interface UserService {
      * 修改密码：校验旧密码后更新为新密码。
      */
     void changePassword(String username, String oldPassword, String newPassword);
+
+    /**
+     * 修改邮箱（用于定时提醒推送）。传 null 或空串表示清除邮箱。
+     */
+    void updateEmail(String username, String email);
+
+    /**
+     * 查询所有已设置有效邮箱的用户（email IS NOT NULL AND email != ''），
+     * 供定时任务批量推送邮件使用。
+     */
+    List<User> listUsersWithEmail();
 
     /**
      * 判断用户名是否可被当前用户使用：

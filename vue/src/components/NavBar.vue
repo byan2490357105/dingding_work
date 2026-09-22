@@ -18,6 +18,7 @@
         <el-menu-item index="/">主页</el-menu-item>
         <el-menu-item index="/notes">随手记</el-menu-item>
         <el-menu-item index="/todo">待办任务</el-menu-item>
+        <el-menu-item index="/dashboard">数据看板</el-menu-item>
       </el-menu>
 
       <!-- 右侧用户区：个人中心式头像下拉 -->
@@ -68,6 +69,7 @@ export default {
       const path = this.$route.path
       if (path.startsWith('/notes')) return '/notes'
       if (path.startsWith('/todo')) return '/todo'
+      if (path.startsWith('/dashboard')) return '/dashboard'
       return '/'
     },
     // 头像取用户名首字，未取名时兜底显示“我”

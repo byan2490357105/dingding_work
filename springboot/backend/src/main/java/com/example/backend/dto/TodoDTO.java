@@ -53,6 +53,13 @@ public class TodoDTO {
     /** 标签 */
     private String label;
 
+    /** 提醒时间，到达时发送邮件提醒，为空表示不提醒，格式 yyyy-MM-dd HH:mm */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm")
+    private LocalDateTime remindTime;
+
+    /** 是否已发送提醒（只读） */
+    private Boolean reminded;
+
     /** 创建日期，格式 yyyy-MM-dd HH:mm */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm")
     private LocalDateTime createdAt;

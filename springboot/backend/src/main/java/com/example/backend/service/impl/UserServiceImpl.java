@@ -7,6 +7,8 @@ import com.example.backend.mapper.UserMapper;
 import com.example.backend.service.UserService;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class UserServiceImpl implements UserService {
 
@@ -133,6 +135,24 @@ public class UserServiceImpl implements UserService {
         update.setId(user.getId());
         update.setPassword(newPassword);
         userMapper.updateById(update);
+    }
+
+    @Override
+    public void updateEmail(String username, String email) {
+        User user = requireByUsername(username);
+        User update = new User();
+        update.setId(user.getId());
+        // 空串视为清除邮箱
+        update.setEmail(email == null || email.trim().isEmpty() ? null : email.trim());
+        userMapper.updateById(update);
+    }
+
+    @Override
+    public List<User> listUsersWithEmail() {
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.isNotNull(User::getEmail)
+                .ne(User::getEmail, "");
+        return userMapper.selectList(queryWrapper);
     }
 
     @Override

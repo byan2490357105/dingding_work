@@ -42,7 +42,21 @@ public class ProfileController {
         ProfileVO vo = new ProfileVO();
         vo.setUsername(user.getUsername());
         vo.setPhone(user.getPhone());
+        vo.setEmail(user.getEmail());
         return Result.success(vo);
+    }
+
+    /**
+     * 修改邮箱（用于定时提醒推送）。
+     * 传空串表示清除邮箱。更新成功后不再接收邮件提醒。
+     */
+    @PutMapping("/email")
+    public Result<Void> updateEmail(@RequestBody java.util.Map<String, String> body,
+                                     HttpServletRequest request) {
+        String username = (String) request.getAttribute("username");
+        String email = body == null ? null : body.get("email");
+        userService.updateEmail(username, email);
+        return Result.success("邮箱设置成功", null);
     }
 
     /**

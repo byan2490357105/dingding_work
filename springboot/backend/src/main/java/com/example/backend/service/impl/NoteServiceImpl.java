@@ -177,6 +177,24 @@ public class NoteServiceImpl implements NoteService {
                 .orderByDesc(Note::getId));
     }
 
+    @Override
+    public List<Note> listLastMonth(String username) {
+        Long userId = requireUserId(username);
+        LocalDateTime since = LocalDateTime.now().minusDays(30);
+        return noteMapper.selectList(baseWrapper(userId)
+                .ge(Note::getCreateTime, since)
+                .orderByDesc(Note::getCreateTime));
+    }
+
+    @Override
+    public List<Note> listLastWeek(String username) {
+        Long userId = requireUserId(username);
+        LocalDateTime since = LocalDateTime.now().minusDays(7);
+        return noteMapper.selectList(baseWrapper(userId)
+                .ge(Note::getCreateTime, since)
+                .orderByDesc(Note::getCreateTime));
+    }
+
     // ==================== 私有辅助方法 ====================
 
     /** 基础查询条件：当前用户 + 未删除 */

@@ -54,6 +54,14 @@ public class Todo {
     @TableField("is_completed")
     private Boolean completed;
 
+    /** 提醒时间：到达该时间时发送邮件提醒，为空表示不提醒 */
+    @TableField("remind_time")
+    private LocalDateTime remindTime;
+
+    /** 是否已发送提醒（0 未发送，1 已发送），防止重复推送 */
+    @TableField("is_reminded")
+    private Boolean reminded;
+
     /** 标签 */
     private String label;
 

@@ -11,6 +11,12 @@
           <el-button size="large" type="success" plain :loading="exportingWord" @click="exportWord">
             <el-icon><Document /></el-icon>&nbsp;导出Word
           </el-button>
+          <el-button size="large" type="warning" :loading="generatingReport" @click="generateNoteReport">
+            <el-icon><MagicStick /></el-icon>&nbsp;AI 月报
+          </el-button>
+          <el-button size="large" type="warning" plain :loading="generatingReport" @click="generateNoteWeeklyReport">
+            <el-icon><MagicStick /></el-icon>&nbsp;AI 周报
+          </el-button>
           <el-button type="primary" size="large" @click="openCreate">
             <el-icon><EditPen /></el-icon>&nbsp;新建笔记
           </el-button>
@@ -153,16 +159,72 @@
         <el-button type="primary" @click="editFromDetail">编辑</el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 笔记月报 / 周报弹窗 -->
+    <el-dialog
+      v-model="reportVisible"
+      :title="reportTitle"
+      width="720px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="generatingReport">
+        <div class="report-period">统计周期：{{ reportPeriod }}</div>
+        <div v-if="reportCached" class="report-cached-tip">（来自缓存，数据未更新）</div>
+        <div class="report-content" v-html="reportHtml"></div>
+      </div>
+      <template #footer>
+        <el-button type="primary" plain @click="openHistory">历史报告</el-button>
+        <el-button @click="reportVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- AI 报告历史抽屉 -->
+    <el-drawer
+      v-model="historyVisible"
+      title="AI 报告历史"
+      size="460px"
+      :append-to-body="true"
+    >
+      <div class="history-toolbar">
+        <el-radio-group v-model="historyType" @change="loadHistory">
+          <el-radio-button label="note-monthly">月报</el-radio-button>
+          <el-radio-button label="note-weekly">周报</el-radio-button>
+        </el-radio-group>
+        <el-button size="small" @click="loadHistory">刷新</el-button>
+      </div>
+      <div v-loading="historyLoading" class="history-body">
+        <el-empty v-if="historyList.length === 0" description="暂无历史报告" :image-size="60" />
+        <el-timeline v-else>
+          <el-timeline-item
+            v-for="rep in historyList"
+            :key="rep.id"
+            :timestamp="formatHistoryTime(rep.generatedAt)"
+            placement="top"
+          >
+            <el-card
+              shadow="hover"
+              class="history-card"
+              @click="showHistoryReport(rep)"
+            >
+              <div class="history-period">{{ rep.period }}</div>
+              <div class="history-type">类型：{{ reportTypeLabel(rep.reportType) }}</div>
+              <div class="history-click-tip">点击查看完整报告</div>
+            </el-card>
+          </el-timeline-item>
+        </el-timeline>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script>
-import { Top, Document, EditPen, Download } from '@element-plus/icons-vue'
+import { Top, Document, EditPen, Download, MagicStick } from '@element-plus/icons-vue'
 import NoteCard from '../components/NoteCard.vue'
+import { renderMarkdown } from '../utils/markdown'
 
 export default {
   name: 'Notes',
-  components: { Top, Document, EditPen, Download, NoteCard },
+  components: { Top, Document, EditPen, Download, MagicStick, NoteCard },
   data() {
     return {
       // 默认标签
@@ -173,6 +235,16 @@ export default {
       trashNotes: [],
       exportingCsv: false,
       exportingWord: false,
+      generatingReport: false,
+      reportVisible: false,
+      reportTitle: 'AI 笔记月报',
+      reportPeriod: '',
+      reportHtml: '',
+      reportCached: false,
+      historyVisible: false,
+      historyLoading: false,
+      historyList: [],
+      historyType: 'note-monthly',
       dialogVisible: false,
       detailVisible: false,
       detail: null,
@@ -254,6 +326,109 @@ export default {
       } finally {
         this.exportingWord = false
       }
+    },
+
+    // 生成 AI 笔记月报
+    async generateNoteReport() {
+      this.reportTitle = 'AI 笔记月报'
+      this.reportVisible = true
+      this.generatingReport = true
+      this.reportCached = false
+      this.reportHtml = '<div style="color:#909399">AI 正在分析你近一个月的笔记，请稍候...</div>'
+      this.reportPeriod = ''
+      try {
+        const res = await this.$http.get('/api/ai/report/notes')
+        if (res.data.code === 200) {
+          this.reportPeriod = res.data.data.period
+          this.reportCached = !!res.data.data.cached
+          this.reportHtml = renderMarkdown(res.data.data.content)
+        } else {
+          this.reportHtml = '<div style="color:#f56c6c">' + (res.data.message || '生成失败') + '</div>'
+        }
+      } catch (err) {
+        const msg = (err.response && err.response.data && err.response.data.message) || '生成失败，请稍后重试'
+        this.reportHtml = '<div style="color:#f56c6c">' + msg + '</div>'
+      } finally {
+        this.generatingReport = false
+      }
+    },
+
+    // 生成 AI 笔记周报
+    async generateNoteWeeklyReport() {
+      this.reportTitle = 'AI 笔记周报'
+      this.reportVisible = true
+      this.generatingReport = true
+      this.reportCached = false
+      this.reportHtml = '<div style="color:#909399">AI 正在分析你近一周的笔记，请稍候...</div>'
+      this.reportPeriod = ''
+      try {
+        const res = await this.$http.get('/api/ai/report/notes/weekly')
+        if (res.data.code === 200) {
+          this.reportPeriod = res.data.data.period
+          this.reportCached = !!res.data.data.cached
+          this.reportHtml = renderMarkdown(res.data.data.content)
+        } else {
+          this.reportHtml = '<div style="color:#f56c6c">' + (res.data.message || '生成失败') + '</div>'
+        }
+      } catch (err) {
+        const msg = (err.response && err.response.data && err.response.data.message) || '生成失败，请稍后重试'
+        this.reportHtml = '<div style="color:#f56c6c">' + msg + '</div>'
+      } finally {
+        this.generatingReport = false
+      }
+    },
+
+    // 打开历史报告抽屉：默认显示当前报告类型
+    openHistory() {
+      const isWeekly = (this.reportTitle || '').includes('周报')
+      this.historyType = isWeekly ? 'note-weekly' : 'note-monthly'
+      this.historyVisible = true
+      this.loadHistory()
+    },
+    // 拉取历史报告列表
+    async loadHistory() {
+      this.historyLoading = true
+      try {
+        const res = await this.$http.get('/api/ai/report/history', {
+          params: { type: this.historyType, limit: 12 }
+        })
+        if (res.data.code === 200) {
+          this.historyList = res.data.data || []
+        } else {
+          this.$message.error(res.data.message || '加载历史失败')
+        }
+      } catch (err) {
+        if (!err.response || err.response.status !== 401) {
+          this.$message.error('加载历史失败')
+        }
+      } finally {
+        this.historyLoading = false
+      }
+    },
+    // 点击历史报告：填充到主弹窗展示
+    showHistoryReport(rep) {
+      this.reportTitle = 'AI 笔记' + (rep.reportType === 'note-weekly' ? '周报' : '月报') + '（历史）'
+      this.reportPeriod = rep.period || ''
+      this.reportCached = false
+      this.reportHtml = renderMarkdown(rep.content)
+      this.historyVisible = false
+      this.reportVisible = true
+    },
+    // 历史报告时间格式化（兼容 ISO 字符串与数组）
+    formatHistoryTime(t) {
+      if (!t) return ''
+      if (Array.isArray(t)) {
+        const [y, m, d, hh = 0, mm = 0] = t
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+      }
+      return String(t).replace('T', ' ').slice(0, 16)
+    },
+    reportTypeLabel(type) {
+      if (type === 'note-weekly') return '笔记周报'
+      if (type === 'note-monthly') return '笔记月报'
+      if (type === 'todo-weekly') return '待办周报'
+      if (type === 'todo-monthly') return '待办月报'
+      return type || '未知'
     },
 
     // 查看笔记详情：请求后端获取最新详情
@@ -440,6 +615,85 @@ export default {
 <style scoped>
 .notes-page {
   text-align: left;
+}
+.report-period {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 12px;
+}
+.report-cached-tip {
+  font-size: 12px;
+  color: #e6a23c;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin-bottom: 12px;
+}
+.report-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 8px;
+  line-height: 1.8;
+  font-size: 14px;
+  color: #303133;
+}
+.report-content h2 {
+  font-size: 17px;
+  color: #2e74b5;
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e4e7ed;
+}
+.report-content h3 {
+  font-size: 15px;
+  color: #409eff;
+  margin: 14px 0 8px;
+}
+.report-content strong {
+  color: #303133;
+}
+.report-content p {
+  margin: 8px 0;
+}
+.report-content ul, .report-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.report-content li {
+  margin: 4px 0;
+}
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.history-body {
+  padding: 0 4px;
+}
+.history-card {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.history-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--el-color-primary);
+}
+.history-period {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+.history-type {
+  font-size: 12px;
+  color: #909399;
+}
+.history-click-tip {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin-top: 6px;
 }
 .notes-body {
   padding: 20px;

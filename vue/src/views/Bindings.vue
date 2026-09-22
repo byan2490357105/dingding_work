@@ -26,9 +26,6 @@
         >
           {{ isBound(provider.provider) ? `已绑定${provider.displayName}` : `绑定${provider.displayName}` }}
         </el-button>
-        <el-button v-if="isBound('dingtalk')" type="success" plain @click="$router.push('/dingtalk/sheets')">
-          操作钉钉表格
-        </el-button>
         <el-text v-if="providers.length === 0" type="info">暂无可绑定的第三方平台</el-text>
       </div>
 

@@ -40,4 +40,16 @@ public interface TodoService {
 
     /** 导出用：查询当前用户所有未删除待办（置顶优先），返回实体 */
     List<Todo> listForExport(String username);
+
+    /** 月报用：查询当前用户近 30 天创建的待办（含已完成与未完成，按创建时间倒序） */
+    List<Todo> listLastMonth(String username);
+
+    /** 周报用：查询当前用户近 7 天创建的待办（含已完成与未完成，按创建时间倒序） */
+    List<Todo> listLastWeek(String username);
+
+    /** 查询所有到达提醒时间且未发送提醒的未完成待办（定时任务用，跨用户） */
+    List<Todo> listTodosToRemind();
+
+    /** 标记待办为已发送提醒 */
+    void markReminded(Long id);
 }

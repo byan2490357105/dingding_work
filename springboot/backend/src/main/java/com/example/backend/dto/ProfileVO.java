@@ -11,4 +11,7 @@ public class ProfileVO {
     private String username;
 
     private String phone;
+
+    /** 邮箱（用于定时提醒推送） */
+    private String email;
 }

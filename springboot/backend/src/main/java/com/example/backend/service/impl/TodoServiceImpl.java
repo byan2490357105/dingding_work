@@ -52,6 +52,8 @@ public class TodoServiceImpl implements TodoService {
         todo.setDeleted(false);
         // 新建任务默认未完成
         todo.setCompleted(false);
+        // 新建任务默认未发送提醒
+        todo.setReminded(false);
         todo.setCreatedAt(now);
         // 未修改时修改时间等于创建时间
         todo.setUpdatedAt(now);
@@ -88,7 +90,12 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = todoMapper.selectById(id);
         checkOwnership(todo, userId);
 
+        // 记录修改前的提醒时间，用于判断是否需要重置提醒状态
+        LocalDateTime oldRemindTime = todo.getRemindTime();
         applyDTO(todo, todoDTO);
+        if (oldRemindTime == null ? todoDTO.getRemindTime() != null : !oldRemindTime.equals(todoDTO.getRemindTime())) {
+            todo.setReminded(false);
+        }
         // 修改成功后刷新修改时间
         todo.setUpdatedAt(currentMinuteTime());
 
@@ -169,6 +176,54 @@ public class TodoServiceImpl implements TodoService {
         return todoMapper.selectList(wrapper);
     }
 
+    @Override
+    public List<Todo> listLastMonth(String username) {
+        Long userId = requireUserId(username);
+        LocalDateTime since = LocalDateTime.now().minusDays(30);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
+                .ge(Todo::getCreatedAt, since)
+                .orderByDesc(Todo::getCreatedAt);
+        return todoMapper.selectList(wrapper);
+    }
+
+    @Override
+    public List<Todo> listLastWeek(String username) {
+        Long userId = requireUserId(username);
+        LocalDateTime since = LocalDateTime.now().minusDays(7);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
+                .ge(Todo::getCreatedAt, since)
+                .orderByDesc(Todo::getCreatedAt);
+        return todoMapper.selectList(wrapper);
+    }
+
+    @Override
+    public List<Todo> listTodosToRemind() {
+        LocalDateTime now = LocalDateTime.now();
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getDeleted, false)
+                .eq(Todo::getCompleted, false)
+                .eq(Todo::getReminded, false)
+                .isNotNull(Todo::getRemindTime)
+                .le(Todo::getRemindTime, now)
+                .orderByAsc(Todo::getRemindTime);
+        return todoMapper.selectList(wrapper);
+    }
+
+    @Override
+    public void markReminded(Long id) {
+        if (id == null) {
+            return;
+        }
+        LambdaUpdateWrapper<Todo> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Todo::getId, id)
+                .set(Todo::getReminded, true);
+        todoMapper.update(null, wrapper);
+    }
+
     /** 通过登录用户名找到数据库中的 user.id；用户不存在则不能创建待办 */
     private Long requireUserId(String username) {
         User user = userService.getByUsername(username);
@@ -233,6 +288,7 @@ public class TodoServiceImpl implements TodoService {
         todo.setRepeatUntil(Boolean.TRUE.equals(dto.getDaily()) ? dto.getRepeatUntil() : null);
         todo.setTop(Boolean.TRUE.equals(dto.getTop()));
         todo.setLabel(dto.getLabel());
+        todo.setRemindTime(dto.getRemindTime());
     }
 
     private TodoDTO toDTO(Todo todo) {
@@ -248,6 +304,8 @@ public class TodoServiceImpl implements TodoService {
         dto.setCompleted(Boolean.TRUE.equals(todo.getCompleted()));
         dto.setStatus(deriveStatus(todo));
         dto.setLabel(todo.getLabel());
+        dto.setRemindTime(todo.getRemindTime());
+        dto.setReminded(Boolean.TRUE.equals(todo.getReminded()));
         dto.setCreatedAt(todo.getCreatedAt());
         dto.setUpdatedAt(todo.getUpdatedAt());
         return dto;

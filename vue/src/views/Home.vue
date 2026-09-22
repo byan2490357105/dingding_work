@@ -26,6 +26,15 @@
         >
           账号绑定
         </el-button>
+        <el-button
+          v-show="isLogin"
+          type="primary"
+          plain
+          size="large"
+          @click="$router.push('/dashboard')"
+        >
+          数据看板
+        </el-button>
       </div>
     </el-card>
   </div>

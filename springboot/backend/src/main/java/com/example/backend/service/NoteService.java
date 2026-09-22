@@ -55,4 +55,10 @@ public interface NoteService {
 
     /** 导出用：查询当前用户所有未删除笔记（置顶优先） */
     List<Note> listForExport(String username);
+
+    /** 月报用：查询当前用户近 30 天创建的笔记（按创建时间倒序） */
+    List<Note> listLastMonth(String username);
+
+    /** 周报用：查询当前用户近 7 天创建的笔记（按创建时间倒序） */
+    List<Note> listLastWeek(String username);
 }
