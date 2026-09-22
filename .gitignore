@@ -70,19 +70,21 @@ $RECYCLE.BIN/
 *~
 
 # ===== 环境变量 / 敏感配置 =====
+# 所有 .env 文件
 *.env
 *.env.local
 .env.*.local
 
-# ===== 其他 =====
-HELP.md
-*.swp
-*.swo
-*~
+# 所有 properties 配置文件（含真实秘钥，避免泄露）
+# 公开模板 application-example.properties 例外，可提交
+*.properties
+!**/application-example.properties
 
-# 项目无关文件
+# 所有 SQL 脚本（含表结构、升级脚本，本地用）
+*.sql
+
+# 所有 txt 文件（含 API Key、令牌、授权码等）
+*.txt
+
+# 以下旧规则保留兼容（已被上方通配覆盖，无需再单列）
 /新项目.txt
-/github仓库令牌.txt
-/钉钉权限相关.txt
-/deeoseek's api.txt
-/qq邮箱smtp.txt
