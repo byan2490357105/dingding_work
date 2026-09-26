@@ -22,7 +22,7 @@
         <el-button
           v-show="isLogin"
           size="large"
-          @click="$router.push('/settings/bindings')"
+          @click="$router.push('/settings/profile?tab=bindings')"
         >
           账号绑定
         </el-button>

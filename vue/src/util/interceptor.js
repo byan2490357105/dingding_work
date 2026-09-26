@@ -7,6 +7,27 @@ const service = axios.create({
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
+  },
+  // 数组参数序列化为 key=a&key=b（Spring @RequestParam List 可直接绑定），
+  // axios 默认会序列化成 key[]=a，后端收不到
+  paramsSerializer: {
+    serialize(params) {
+      const parts = []
+      Object.keys(params).forEach(key => {
+        const val = params[key]
+        if (val === null || val === undefined || val === '') return
+        if (Array.isArray(val)) {
+          val.forEach(v => {
+            if (v !== null && v !== undefined && v !== '') {
+              parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(v))
+            }
+          })
+        } else {
+          parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val))
+        }
+      })
+      return parts.join('&')
+    }
   }
 })
 

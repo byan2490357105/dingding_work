@@ -4,6 +4,16 @@
 
     <div class="page-toolbar">
       <div>
+        <el-input
+          v-model="searchKeyword"
+          placeholder="按标题/关键字搜索待办"
+          clearable
+          style="width: 200px"
+          :prefix-icon="Search"
+        />
+        <el-button @click="openWordCloud">
+          <el-icon><Histogram /></el-icon>&nbsp;词云
+        </el-button>
         <el-button type="primary" @click="openCreate">新建待办</el-button>
         <el-button :type="viewMode === 'calendar' ? 'primary' : 'default'" plain @click="toggleCalendarView">
           <el-icon><Calendar /></el-icon>&nbsp;{{ viewMode === 'calendar' ? '切换列表模式' : '切换日历模式' }}
@@ -11,7 +21,7 @@
         <el-button :type="viewMode === 'timeline' ? 'primary' : 'default'" plain @click="toggleTimelineView">
           <el-icon><AlarmClock /></el-icon>&nbsp;{{ viewMode === 'timeline' ? '切换列表模式' : '时间轴模式' }}
         </el-button>
-        <el-button :loading="loading" @click="loadTodos">刷新</el-button>
+        <el-button :loading="loading" @click="reloadAfterChange">刷新</el-button>
         <el-button type="success" plain :loading="exporting" @click="exportCsv">
           <el-icon><Download /></el-icon>&nbsp;导出待办
         </el-button>
@@ -25,153 +35,232 @@
       <el-tag v-if="username" type="info" effect="plain">{{ username }} 的待办</el-tag>
     </div>
 
+    <!-- 标签筛选面板（可折叠，仅列表视图显示） -->
+    <div class="tag-filter-panel" v-if="viewMode === 'list' && allLabels.length > 0">
+      <div class="tag-filter-head" @click="tagPanelCollapsed = !tagPanelCollapsed">
+        <el-icon class="collapse-arrow" :class="{ collapsed: tagPanelCollapsed }"><ArrowDown /></el-icon>
+        <span class="tag-filter-title">按标签筛选（勾选显示，取消勾选则隐藏该标签的待办）</span>
+        <el-tag size="small" type="info">{{ selectedLabels.length }}/{{ allLabels.length }} 个标签</el-tag>
+      </div>
+      <div class="tag-filter-body" v-show="!tagPanelCollapsed">
+        <div class="tag-filter-toolbar">
+          <el-input
+            v-model="labelSearchKey"
+            placeholder="搜索标签"
+            size="small"
+            clearable
+            :prefix-icon="Search"
+            style="width: 200px"
+          />
+          <el-button size="small" link @click="selectedLabels = allLabels.slice()">全选</el-button>
+          <el-button size="small" link @click="selectedLabels = []">全不选</el-button>
+        </div>
+        <div class="tag-carousel">
+          <el-button
+            v-if="totalLabelPages > 1"
+            link
+            :disabled="labelPage === 0"
+            class="tag-nav-btn"
+            @click="prevLabelPage"
+          >
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
+          <transition :name="labelSlideDir === 'next' ? 'tag-slide-next' : 'tag-slide-prev'" mode="out-in">
+            <div :key="labelPage" class="tag-page">
+              <el-checkbox-group v-model="selectedLabels" class="tag-checkbox-row">
+                <el-checkbox v-for="lab in pagedLabels" :key="lab" :label="lab" class="tag-checkbox-item">
+                  <el-tag size="small" effect="plain">{{ lab }}</el-tag>
+                  <span class="tag-count">{{ labelCount(lab) }}</span>
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </transition>
+          <el-button
+            v-if="totalLabelPages > 1"
+            link
+            :disabled="labelPage >= totalLabelPages - 1"
+            class="tag-nav-btn"
+            @click="nextLabelPage"
+          >
+            <el-icon><ArrowRight /></el-icon>
+          </el-button>
+        </div>
+      </div>
+    </div>
+
     <el-tabs v-if="viewMode === 'list'" v-model="activeTab" class="todo-tabs" @tab-change="onTabChange">
       <el-tab-pane label="我的待办" name="todos">
         <div v-loading="loading">
-          <!-- 置顶待办 -->
-          <section class="todo-group">
-            <div class="group-title">置顶待办（{{ topTodos.length }}）</div>
-            <el-empty v-if="topTodos.length === 0" description="暂无置顶待办" :image-size="70"></el-empty>
-            <template v-else>
-              <el-card
-                v-for="todo in topTodos"
-                :key="todo.id"
-                shadow="hover"
-                class="todo-card"
-                :class="{ 'todo-overdue': todo.status === '逾期' }"
-              >
-                <template #header>
-                  <div class="todo-header">
-                    <div class="todo-title">
-                      <el-checkbox
-                        :model-value="todo.completed"
-                        title="标记完成 / 取消完成"
-                        @change="toggleComplete(todo)"
-                      />
-                      <el-tag v-if="todo.top" type="warning" size="small">置顶</el-tag>
-                      <el-tag v-if="todo.daily" type="success" size="small">每日</el-tag>
-                      <el-tag :type="statusType(todo.status)" size="small" effect="dark">{{ todo.status }}</el-tag>
-                      <span class="todo-title-text">{{ todo.title }}</span>
-                    </div>
-                    <div class="todo-actions">
-                      <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
-                      <el-button link type="primary" @click="openDetail(todo)">详情</el-button>
-                      <el-button link type="success" @click="toggleComplete(todo)">标记完成</el-button>
-                      <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
-                      <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
-                    </div>
+          <!-- 置顶待办（当前页内，置顶排序在最前） -->
+          <section class="todo-group" v-if="pendingTopRecords.length > 0">
+            <div class="group-title">置顶待办（{{ pendingTopRecords.length }}）</div>
+            <el-card
+              v-for="todo in pendingTopRecords"
+              :key="todo.id"
+              shadow="hover"
+              class="todo-card"
+              :class="{ 'todo-overdue': todo.status === '逾期' }"
+            >
+              <template #header>
+                <div class="todo-header">
+                  <div class="todo-title">
+                    <el-checkbox
+                      :model-value="todo.completed"
+                      title="标记完成 / 取消完成"
+                      @change="toggleComplete(todo)"
+                    />
+                    <el-tag type="warning" size="small">置顶</el-tag>
+                    <el-tag v-if="todo.daily" type="success" size="small">每日</el-tag>
+                    <el-tag :type="statusType(todo.status)" size="small" effect="dark">{{ todo.status }}</el-tag>
+                    <span class="todo-title-text">{{ todo.title }}</span>
                   </div>
-                </template>
-                <div class="todo-time">
-                  <span>开始：{{ formatTime(todo.startTime) }}</span>
-                  <span>结束：{{ formatTime(todo.endTime) }}</span>
-                  <span v-if="todo.remindTime" class="remind-tip">
-                    <el-icon><AlarmClock /></el-icon>提醒：{{ formatTime(todo.remindTime) }}
-                    <el-tag v-if="todo.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
-                  </span>
-                  <span v-if="todo.daily && todo.repeatUntil" class="repeat-tip">每日重复至 {{ todo.repeatUntil }}</span>
-                  <span v-else-if="todo.daily" class="repeat-tip">每天重复，长期有效</span>
+                  <div class="todo-actions">
+                    <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
+                    <el-button link type="primary" @click="openDetail(todo)">详情</el-button>
+                    <el-button link type="success" @click="toggleComplete(todo)">标记完成</el-button>
+                    <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
+                    <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
+                  </div>
                 </div>
-                <div v-if="todo.content" class="todo-content" v-html="todo.content"></div>
-                <div class="todo-meta">
-                  创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
-                </div>
-              </el-card>
-            </template>
+              </template>
+              <div class="todo-time">
+                <span>开始：{{ formatTime(todo.startTime) }}</span>
+                <span>结束：{{ formatTime(todo.endTime) }}</span>
+                <span v-if="todo.remindTime" class="remind-tip">
+                  <el-icon><AlarmClock /></el-icon>提醒：{{ formatTime(todo.remindTime) }}
+                  <el-tag v-if="todo.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
+                </span>
+                <span v-if="todo.daily && todo.repeatUntil" class="repeat-tip">每日重复至 {{ todo.repeatUntil }}</span>
+                <span v-else-if="todo.daily" class="repeat-tip">每天重复，长期有效</span>
+              </div>
+              <div v-if="todo.content" class="todo-content" v-html="todo.content"></div>
+              <div class="todo-meta">
+                创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
+              </div>
+            </el-card>
           </section>
 
-          <!-- 未置顶待办 -->
+          <!-- 未置顶的进行中待办（当前页内） -->
           <section class="todo-group">
-            <div class="group-title">未置顶待办（{{ normalTodos.length }}）</div>
-            <el-empty v-if="normalTodos.length === 0" description="暂无待办，点击右上角新建" :image-size="70"></el-empty>
-            <template v-else>
-              <el-card
-                v-for="todo in normalTodos"
-                :key="todo.id"
-                shadow="hover"
-                class="todo-card"
-                :class="{ 'todo-overdue': todo.status === '逾期' }"
-              >
-                <template #header>
-                  <div class="todo-header">
-                    <div class="todo-title">
-                      <el-checkbox
-                        :model-value="todo.completed"
-                        title="标记完成 / 取消完成"
-                        @change="toggleComplete(todo)"
-                      />
-                      <el-tag v-if="todo.daily" type="success" size="small">每日</el-tag>
-                      <el-tag :type="statusType(todo.status)" size="small" effect="dark">{{ todo.status }}</el-tag>
-                      <span class="todo-title-text">{{ todo.title }}</span>
-                    </div>
-                    <div class="todo-actions">
-                      <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
-                      <el-button link type="primary" @click="openDetail(todo)">详情</el-button>
-                      <el-button link type="success" @click="toggleComplete(todo)">标记完成</el-button>
-                      <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
-                      <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
-                    </div>
+            <div class="group-title">进行中的待办（{{ pendingNormalRecords.length }}）</div>
+            <el-empty
+              v-if="pendingNormalRecords.length === 0 && pendingTopRecords.length === 0"
+              :description="searchKeyword || selectedLabels.length < allLabels.length ? '没有符合条件的待办' : '暂无待办，点击右上角新建'"
+              :image-size="70"
+            ></el-empty>
+            <el-card
+              v-for="todo in pendingNormalRecords"
+              :key="todo.id"
+              shadow="hover"
+              class="todo-card"
+              :class="{ 'todo-overdue': todo.status === '逾期' }"
+            >
+              <template #header>
+                <div class="todo-header">
+                  <div class="todo-title">
+                    <el-checkbox
+                      :model-value="todo.completed"
+                      title="标记完成 / 取消完成"
+                      @change="toggleComplete(todo)"
+                    />
+                    <el-tag v-if="todo.daily" type="success" size="small">每日</el-tag>
+                    <el-tag :type="statusType(todo.status)" size="small" effect="dark">{{ todo.status }}</el-tag>
+                    <span class="todo-title-text">{{ todo.title }}</span>
                   </div>
-                </template>
-                <div class="todo-time">
-                  <span>开始：{{ formatTime(todo.startTime) }}</span>
-                  <span>结束：{{ formatTime(todo.endTime) }}</span>
-                  <span v-if="todo.remindTime" class="remind-tip">
-                    <el-icon><AlarmClock /></el-icon>提醒：{{ formatTime(todo.remindTime) }}
-                    <el-tag v-if="todo.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
-                  </span>
-                  <span v-if="todo.daily && todo.repeatUntil" class="repeat-tip">每日重复至 {{ todo.repeatUntil }}</span>
-                  <span v-else-if="todo.daily" class="repeat-tip">每天重复，长期有效</span>
+                  <div class="todo-actions">
+                    <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
+                    <el-button link type="primary" @click="openDetail(todo)">详情</el-button>
+                    <el-button link type="success" @click="toggleComplete(todo)">标记完成</el-button>
+                    <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
+                    <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
+                  </div>
                 </div>
-                <div v-if="todo.content" class="todo-content" v-html="todo.content"></div>
-                <div class="todo-meta">
-                  创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
-                </div>
-              </el-card>
-            </template>
+              </template>
+              <div class="todo-time">
+                <span>开始：{{ formatTime(todo.startTime) }}</span>
+                <span>结束：{{ formatTime(todo.endTime) }}</span>
+                <span v-if="todo.remindTime" class="remind-tip">
+                  <el-icon><AlarmClock /></el-icon>提醒：{{ formatTime(todo.remindTime) }}
+                  <el-tag v-if="todo.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
+                </span>
+                <span v-if="todo.daily && todo.repeatUntil" class="repeat-tip">每日重复至 {{ todo.repeatUntil }}</span>
+                <span v-else-if="todo.daily" class="repeat-tip">每天重复，长期有效</span>
+              </div>
+              <div v-if="todo.content" class="todo-content" v-html="todo.content"></div>
+              <div class="todo-meta">
+                创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
+              </div>
+            </el-card>
           </section>
 
-          <!-- 已完成待办 -->
-          <section class="todo-group">
-            <div class="group-title">已完成（{{ completedTodos.length }}）</div>
-            <el-empty v-if="completedTodos.length === 0" description="暂无已完成的待办" :image-size="70"></el-empty>
-            <template v-else>
-              <el-card
-                v-for="todo in completedTodos"
-                :key="todo.id"
-                shadow="hover"
-                class="todo-card todo-done"
-              >
-                <template #header>
-                  <div class="todo-header">
-                    <div class="todo-title">
-                      <el-checkbox
-                        :model-value="todo.completed"
-                        title="取消完成"
-                        @change="toggleComplete(todo)"
-                      />
-                      <el-tag v-if="todo.top" type="warning" size="small">置顶</el-tag>
-                      <el-tag type="success" size="small" effect="dark">已完成</el-tag>
-                      <span class="todo-title-text done-title">{{ todo.title }}</span>
-                    </div>
-                    <div class="todo-actions">
-                      <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
-                      <el-button link type="warning" @click="toggleComplete(todo)">取消完成</el-button>
-                      <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
-                      <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
-                    </div>
-                  </div>
-                </template>
-                <div class="todo-time">
-                  <span>开始：{{ formatTime(todo.startTime) }}</span>
-                  <span>结束：{{ formatTime(todo.endTime) }}</span>
+          <!-- 分页（进行中） -->
+          <div class="pagination-bar" v-if="pendingTotal > 0">
+            <el-pagination
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="pendingTotal"
+              :current-page="pendingPageNum"
+              :page-size="pageSize"
+              :page-sizes="[8, 12, 20, 40]"
+              @current-change="onPendingPageChange"
+              @size-change="onPageSizeChange"
+            />
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 已完成待办（独立分页） -->
+      <el-tab-pane :label="`已完成(${completedTotal})`" name="done">
+        <div v-loading="loading">
+          <el-empty v-if="doneRecords.length === 0" :description="searchKeyword || selectedLabels.length < allLabels.length ? '没有符合条件的已完成待办' : '暂无已完成的待办'" :image-size="70"></el-empty>
+          <el-card
+            v-for="todo in doneRecords"
+            :key="todo.id"
+            shadow="hover"
+            class="todo-card todo-done"
+          >
+            <template #header>
+              <div class="todo-header">
+                <div class="todo-title">
+                  <el-checkbox
+                    :model-value="todo.completed"
+                    title="取消完成"
+                    @change="toggleComplete(todo)"
+                  />
+                  <el-tag v-if="todo.top" type="warning" size="small">置顶</el-tag>
+                  <el-tag type="success" size="small" effect="dark">已完成</el-tag>
+                  <span class="todo-title-text done-title">{{ todo.title }}</span>
                 </div>
-                <div class="todo-meta">
-                  创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
+                <div class="todo-actions">
+                  <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
+                  <el-button link type="warning" @click="toggleComplete(todo)">取消完成</el-button>
+                  <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
+                  <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
                 </div>
-              </el-card>
+              </div>
             </template>
-          </section>
+            <div class="todo-time">
+              <span>开始：{{ formatTime(todo.startTime) }}</span>
+              <span>结束：{{ formatTime(todo.endTime) }}</span>
+            </div>
+            <div class="todo-meta">
+              创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
+            </div>
+          </el-card>
+
+          <!-- 分页（已完成） -->
+          <div class="pagination-bar" v-if="doneTotal > 0">
+            <el-pagination
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="doneTotal"
+              :current-page="donePageNum"
+              :page-size="pageSize"
+              :page-sizes="[8, 12, 20, 40]"
+              @current-change="onDonePageChange"
+              @size-change="onPageSizeChange"
+            />
+          </div>
         </div>
       </el-tab-pane>
 
@@ -218,7 +307,19 @@
           </el-button>
           <div class="calendar-center">
             <div class="calendar-title">{{ calendarYear }} 年 {{ calendarMonth + 1 }} 月</div>
-            <el-button link type="primary" @click="goToday">回到本月</el-button>
+            <div class="calendar-picker-row">
+              <el-date-picker
+                v-model="calendarPicker"
+                type="month"
+                placeholder="选择年月"
+                format="YYYY 年 MM 月"
+                value-format="YYYY-MM"
+                :clearable="false"
+                size="small"
+                @change="onCalendarPickerChange"
+              />
+              <el-button link type="primary" @click="goToday">回到本月</el-button>
+            </div>
           </div>
           <el-button circle size="large" title="下一月" @click="nextMonth">
             <el-icon><ArrowRight /></el-icon>
@@ -572,12 +673,27 @@
         </el-timeline>
       </div>
     </el-drawer>
+
+    <!-- 词云弹窗 -->
+    <el-dialog v-model="wordCloudVisible" title="待办词云" width="640px" top="10vh">
+      <el-empty v-if="wordCloudWords.length === 0" description="暂无待办内容生成词云" :image-size="80" />
+      <div v-else class="word-cloud">
+        <span
+          v-for="w in wordCloudWords"
+          :key="w.name"
+          class="wc-word"
+          :style="{ fontSize: wordSize(w.value, wordMax()) + 'px', color: wcColor(w.value, wordMax()) }"
+          :title="'出现 ' + w.value + ' 次'"
+        >{{ w.name }}</span>
+      </div>
+      <div class="wc-tip">基于所有待办标题与正文的高频词生成，字号越大出现频次越高</div>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { mapState } from 'vuex'
-import { Download, MagicStick, Calendar, AlarmClock, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Download, MagicStick, Calendar, AlarmClock, ArrowLeft, ArrowRight, Search, ArrowDown, Histogram } from '@element-plus/icons-vue'
 import RichEditor from '../components/RichEditor.vue'
 import { renderMarkdown } from '../utils/markdown'
 
@@ -609,13 +725,28 @@ export default {
     AlarmClock,
     ArrowLeft,
     ArrowRight,
+    Search,
+    ArrowDown,
+    Histogram,
     RichEditor
   },
   data() {
     return {
+      // todos 为全量数据，供日历/时间轴视图使用；列表视图走后端分页
       todos: [],
       trashTodos: [],
       activeTab: 'todos',
+      // 列表分页（进行中 / 已完成各自独立分页）
+      pendingRecords: [],
+      pendingTotal: 0,
+      pendingPageNum: 1,
+      doneRecords: [],
+      doneTotal: 0,
+      donePageNum: 1,
+      doneLoaded: false,
+      pageSize: 8,
+      // 全量标签统计 [{label,count}]
+      labelStats: [],
       // 视图模式：list 列表 / calendar 日历 / timeline 时间轴
       viewMode: 'list',
       calendarYear: new Date().getFullYear(),
@@ -639,7 +770,17 @@ export default {
       detail: null,
       form: defaultForm(),
       predicting: false,
-      prediction: null
+      prediction: null,
+      // 标签筛选 / 搜索 / 词云 / 日历选择器
+      searchKeyword: '',
+      selectedLabels: [],
+      labelSearchKey: '',
+      labelPage: 0,
+      labelSlideDir: 'next',
+      tagPanelCollapsed: false,
+      wordCloudVisible: false,
+      wordCloudWords: [],
+      calendarPicker: ''
     }
   },
   computed: {
@@ -658,20 +799,41 @@ export default {
       return this.prediction.level === '高' ? '#67c23a'
         : this.prediction.level === '低' ? '#f56c6c' : '#e6a23c'
     },
-    // 置顶且未完成的待办
-    topTodos() {
-      return this.todos.filter(todo => todo.top && !todo.completed)
+    // 当前进行中页内的置顶待办
+    pendingTopRecords() {
+      return this.pendingRecords.filter(t => t.top)
     },
-    // 未置顶且未完成的待办
-    normalTodos() {
-      return this.todos.filter(todo => !todo.top && !todo.completed)
+    // 当前进行中页内的未置顶待办
+    pendingNormalRecords() {
+      return this.pendingRecords.filter(t => !t.top)
     },
-    // 已完成的待办（不论置顶）
-    completedTodos() {
-      return this.todos.filter(todo => todo.completed)
+    // 已完成总数（全量，用于 Tab 角标；来自全量列表）
+    completedTotal() {
+      return this.todos.filter(t => t.completed).length
+    },
+    // 所有不重复的非空标签（来自后端全量统计）
+    allLabels() {
+      return this.labelStats.map(t => t.label)
+    },
+    // 标签面板按搜索关键字过滤后的显示列表
+    visibleLabels() {
+      if (!this.labelSearchKey) return this.allLabels
+      const kw = this.labelSearchKey.toLowerCase()
+      return this.allLabels.filter(l => l.toLowerCase().includes(kw))
+    },
+    // 标签总页数（每页 5 个）
+    totalLabelPages() {
+      return Math.max(1, Math.ceil(this.visibleLabels.length / 5))
+    },
+    // 当前页显示的标签（5 个一组）
+    pagedLabels() {
+      const start = this.labelPage * 5
+      return this.visibleLabels.slice(start, start + 5)
     },
     labelOptions() {
       const options = new Set(DEFAULT_TAGS)
+      // 合并后端全量标签统计（含自定义标签）
+      this.allLabels.forEach(l => options.add(l))
       this.todos.forEach(todo => {
         if (todo.label) options.add(todo.label)
       })
@@ -814,14 +976,193 @@ export default {
     }
   },
   created() {
+    // 全量数据（日历/时间轴用）
     this.loadTodos()
+    // 列表第一页 + 标签统计 + 回收站
+    this.fetchPage('pending')
+    this.fetchLabelStats()
     this.fetchTrash()
   },
+  watch: {
+    // 搜索关键字防抖 300ms 后回到第 1 页重新查询
+    searchKeyword() {
+      this.scheduleReload()
+    },
+    // 勾选标签变化立即重新查询
+    selectedLabels() {
+      this.pendingPageNum = 1
+      this.donePageNum = 1
+      this.doneLoaded = false
+      this.fetchActivePage()
+    },
+    // 标签统计变化：首次全选，后续只勾选新出现的标签
+    labelStats(newStats, oldStats) {
+      if (!oldStats || oldStats.length === 0) {
+        this.selectedLabels = this.allLabels.slice()
+      } else {
+        const oldLabels = oldStats.map(t => t.label)
+        const newLabels = this.allLabels.filter(l => !oldLabels.includes(l))
+        if (newLabels.length) {
+          this.selectedLabels = [...this.selectedLabels, ...newLabels]
+        }
+      }
+    },
+    // 搜索标签时重置到第一页
+    labelSearchKey() {
+      this.labelPage = 0
+    }
+  },
   methods: {
-    // 切换 Tab 时刷新回收站
+    // 构造分页查询参数（关键字 + 未勾选标签下沉后端排除）
+    buildPageParams(status) {
+      const params = {
+        status,
+        pageNum: status === 'done' ? this.donePageNum : this.pendingPageNum,
+        pageSize: this.pageSize
+      }
+      if (this.searchKeyword) params.keyword = this.searchKeyword
+      // 未勾选的标签 = 全部标签 - 已勾选标签
+      const excluded = this.allLabels.filter(l => !this.selectedLabels.includes(l))
+      if (excluded.length) params.excludeLabel = excluded
+      return params
+    },
+    // 拉取分页待办：status=pending（进行中）/ done（已完成）
+    async fetchPage(status) {
+      const isDone = status === 'done'
+      this.loading = true
+      try {
+        const res = await this.$http.get('/api/todo/page', { params: this.buildPageParams(status) })
+        if (res.data.code === 200) {
+          const data = res.data.data
+          const records = data.records || []
+          if (isDone) {
+            this.doneRecords = records
+            this.doneTotal = data.total || 0
+            this.doneLoaded = true
+            // 删除最后一条导致空页时自动回退一页
+            if (!records.length && this.doneTotal > 0 && this.donePageNum > 1) {
+              this.donePageNum -= 1
+              return this.fetchPage('done')
+            }
+          } else {
+            this.pendingRecords = records
+            this.pendingTotal = data.total || 0
+            if (!records.length && this.pendingTotal > 0 && this.pendingPageNum > 1) {
+              this.pendingPageNum -= 1
+              return this.fetchPage('pending')
+            }
+          }
+        }
+      } catch (err) {
+        this.handleError(err)
+      } finally {
+        this.loading = false
+      }
+    },
+    // 拉取当前 Tab 对应的页
+    fetchActivePage() {
+      if (this.activeTab === 'done') this.fetchPage('done')
+      else if (this.activeTab === 'todos') this.fetchPage('pending')
+    },
+    // 拉取全量标签统计
+    async fetchLabelStats() {
+      try {
+        const res = await this.$http.get('/api/todo/labels')
+        if (res.data.code === 200) {
+          this.labelStats = res.data.data || []
+        }
+      } catch (err) {
+        // 标签统计失败不阻断主流程
+      }
+    },
+    // 搜索输入防抖
+    scheduleReload() {
+      clearTimeout(this._searchTimer)
+      this._searchTimer = setTimeout(() => {
+        this.pendingPageNum = 1
+        this.donePageNum = 1
+        this.fetchActivePage()
+      }, 300)
+    },
+    onPendingPageChange(page) {
+      this.pendingPageNum = page
+      this.fetchPage('pending')
+    },
+    onDonePageChange(page) {
+      this.donePageNum = page
+      this.fetchPage('done')
+    },
+    onPageSizeChange(size) {
+      this.pageSize = size
+      this.pendingPageNum = 1
+      this.donePageNum = 1
+      this.fetchActivePage()
+    },
+    // 标签轮播：上一页
+    prevLabelPage() {
+      if (this.labelPage > 0) {
+        this.labelSlideDir = 'prev'
+        this.labelPage--
+      }
+    },
+    // 标签轮播：下一页
+    nextLabelPage() {
+      if (this.labelPage < this.totalLabelPages - 1) {
+        this.labelSlideDir = 'next'
+        this.labelPage++
+      }
+    },
+    // 统计某标签下的待办数（全量，来自后端）
+    labelCount(label) {
+      const item = this.labelStats.find(t => t.label === label)
+      return item ? item.count : 0
+    },
+    // 去除 HTML 标签（词云已在后端处理，保留供其他展示复用）
+    stripHtml(html) {
+      const div = document.createElement('div')
+      div.innerHTML = html
+      return div.textContent || div.innerText || ''
+    },
+    // 打开词云弹窗：数据由后端全量统计
+    async openWordCloud() {
+      try {
+        const res = await this.$http.get('/api/todo/wordcloud', { params: { limit: 50 } })
+        if (res.data.code === 200) {
+          this.wordCloudWords = res.data.data || []
+          this.wordCloudVisible = true
+        }
+      } catch (err) {
+        this.$message.error('词云生成失败')
+      }
+    },
+    wordSize(value, max) {
+      if (!max) return 14
+      return Math.round(12 + (value / max) * 24)
+    },
+    wordMax() {
+      return this.wordCloudWords.length ? this.wordCloudWords[0].value : 1
+    },
+    wcColor(value, max) {
+      const ratio = max ? value / max : 0
+      if (ratio > 0.66) return '#e6a23c'
+      if (ratio > 0.33) return '#409eff'
+      return '#909399'
+    },
+    // 日历年月选择器变化
+    onCalendarPickerChange(val) {
+      if (!val) return
+      const [y, m] = val.split('-').map(Number)
+      this.calendarYear = y
+      this.calendarMonth = m - 1
+    },
+    // 切换 Tab：回收站拉全量，已完成首次进入懒加载分页
     onTabChange(tab) {
       if (tab === 'trash') {
         this.fetchTrash()
+      } else if (tab === 'done') {
+        this.fetchPage('done')
+      } else if (tab === 'todos') {
+        this.fetchPage('pending')
       }
     },
     // ===== 视图切换 =====
@@ -1038,6 +1379,13 @@ export default {
         this.loading = false
       }
     },
+    // 数据变更后统一刷新：日历全量 + 两个列表分页（已完成页加载过才刷）+ 标签统计
+    reloadAfterChange() {
+      this.loadTodos()
+      this.fetchPage('pending')
+      if (this.doneLoaded) this.fetchPage('done')
+      this.fetchLabelStats()
+    },
     // 状态 -> 标签颜色：已完成绿色、逾期红色、进行中蓝色
     statusType(status) {
       if (status === '已完成') return 'success'
@@ -1057,7 +1405,7 @@ export default {
           if (this.detailVisible && this.detail && this.detail.id === todo.id && res.data.data) {
             this.detail = res.data.data
           }
-          this.loadTodos()
+          this.reloadAfterChange()
         } else {
           this.$message.error(res.data.message || '操作失败')
         }
@@ -1159,7 +1507,7 @@ export default {
         if (res.data.code === 200) {
           this.$message.success(res.data.message || '保存成功')
           this.dialogVisible = false
-          this.loadTodos()
+          this.reloadAfterChange()
         } else {
           this.$message.error(res.data.message || '保存失败')
         }
@@ -1180,7 +1528,7 @@ export default {
             const res = await this.$http.delete(`/api/todo/${todo.id}`)
             if (res.data.code === 200) {
               this.$message.success('已移入回收站')
-              this.loadTodos()
+              this.reloadAfterChange()
               this.fetchTrash()
             } else {
               this.$message.error(res.data.message || '删除失败')
@@ -1209,7 +1557,7 @@ export default {
         if (res.data.code === 200) {
           this.$message.success('恢复成功')
           this.fetchTrash()
-          this.loadTodos()
+          this.reloadAfterChange()
         } else {
           this.$message.error(res.data.message || '恢复失败')
         }
@@ -1839,5 +2187,132 @@ export default {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
+}
+
+/* ===== 标签筛选面板 ===== */
+.pagination-bar {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 8px;
+}
+.tag-filter-panel {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+.tag-filter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: #f5f7fa;
+  user-select: none;
+}
+.tag-filter-head:hover {
+  background: #ecf5ff;
+}
+.tag-filter-title {
+  font-size: 14px;
+  color: #606266;
+  flex: 1;
+}
+.collapse-arrow {
+  transition: transform 0.2s;
+}
+.collapse-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+.tag-filter-body {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tag-filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tag-carousel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tag-nav-btn {
+  flex-shrink: 0;
+  padding: 4px 8px;
+}
+.tag-page {
+  flex: 1;
+  overflow: hidden;
+}
+.tag-checkbox-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px 12px;
+}
+.tag-checkbox-item {
+  margin-right: 0;
+  display: flex;
+  align-items: center;
+}
+/* 推拉动画：下一页 */
+.tag-slide-next-enter-active,
+.tag-slide-next-leave-active,
+.tag-slide-prev-enter-active,
+.tag-slide-prev-leave-active {
+  transition: transform 0.3s ease;
+}
+.tag-slide-next-enter-from { transform: translateX(100%); }
+.tag-slide-next-leave-to { transform: translateX(-100%); }
+/* 推拉动画：上一页 */
+.tag-slide-prev-enter-from { transform: translateX(-100%); }
+.tag-slide-prev-leave-to { transform: translateX(100%); }
+.tag-count {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 4px;
+}
+
+/* ===== 日历选择器 ===== */
+.calendar-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+/* ===== 词云 ===== */
+.word-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 24px 12px;
+  min-height: 260px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #ecf5ff 100%);
+  border-radius: 8px;
+}
+.wc-word {
+  cursor: default;
+  font-weight: 600;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.wc-word:hover {
+  transform: scale(1.15);
+}
+.wc-tip {
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+  margin-top: 12px;
 }
 </style>

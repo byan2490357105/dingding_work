@@ -5,6 +5,16 @@
       <div class="notes-toolbar">
         <h2 class="page-title">我的随手记</h2>
         <div class="toolbar-actions">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="按标题/关键字搜索笔记"
+            clearable
+            style="width: 220px"
+            :prefix-icon="Search"
+          />
+          <el-button size="large" @click="openWordCloud">
+            <el-icon><Histogram /></el-icon>&nbsp;词云
+          </el-button>
           <el-button size="large" :loading="exportingCsv" @click="exportCsv">
             <el-icon><Download /></el-icon>&nbsp;导出CSV
           </el-button>
@@ -23,17 +33,74 @@
         </div>
       </div>
 
+      <!-- 标签筛选面板（可折叠） -->
+      <div class="tag-filter-panel" v-if="allTags.length > 0">
+        <div class="tag-filter-head" @click="tagPanelCollapsed = !tagPanelCollapsed">
+          <el-icon class="collapse-arrow" :class="{ collapsed: tagPanelCollapsed }"><ArrowDown /></el-icon>
+          <span class="tag-filter-title">按标签筛选（勾选显示，取消勾选则隐藏该标签的笔记）</span>
+          <el-tag size="small" type="info">{{ selectedTags.length }}/{{ allTags.length }} 个标签</el-tag>
+        </div>
+        <div class="tag-filter-body" v-show="!tagPanelCollapsed">
+          <div class="tag-filter-toolbar">
+            <el-input
+              v-model="tagSearchKey"
+              placeholder="搜索标签"
+              size="small"
+              clearable
+              :prefix-icon="Search"
+              style="width: 200px"
+            />
+            <el-button size="small" link @click="selectedTags = allTags.slice()">全选</el-button>
+            <el-button size="small" link @click="selectedTags = []">全不选</el-button>
+          </div>
+          <div class="tag-carousel">
+            <el-button
+              v-if="totalTagPages > 1"
+              link
+              :disabled="tagPage === 0"
+              class="tag-nav-btn"
+              @click="prevTagPage"
+            >
+              <el-icon><ArrowLeft /></el-icon>
+            </el-button>
+            <transition :name="tagSlideDir === 'next' ? 'tag-slide-next' : 'tag-slide-prev'" mode="out-in">
+              <div :key="tagPage" class="tag-page">
+                <el-checkbox-group v-model="selectedTags" class="tag-checkbox-row">
+                  <el-checkbox
+                    v-for="tag in pagedTags"
+                    :key="tag"
+                    :label="tag"
+                    class="tag-checkbox-item"
+                  >
+                    <el-tag size="small" effect="plain">{{ tag }}</el-tag>
+                    <span class="tag-count">{{ tagCount(tag) }}</span>
+                  </el-checkbox>
+                </el-checkbox-group>
+              </div>
+            </transition>
+            <el-button
+              v-if="totalTagPages > 1"
+              link
+              :disabled="tagPage >= totalTagPages - 1"
+              class="tag-nav-btn"
+              @click="nextTagPage"
+            >
+              <el-icon><ArrowRight /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </div>
+
       <el-tabs v-model="activeTab" class="notes-tabs" @tab-change="onTabChange">
         <el-tab-pane label="我的笔记" name="notes">
-          <!-- 置顶笔记 -->
-          <div class="section">
+          <!-- 置顶笔记（置顶排序在最前，翻到后续页无置顶时整块隐藏） -->
+          <div class="section" v-if="filteredPinnedNotes.length > 0">
             <h3 class="section-title">
               <el-icon><Top /></el-icon> 置顶笔记
-              <el-tag size="small" type="warning" round>{{ pinnedNotes.length }}</el-tag>
+              <el-tag size="small" type="warning" round>{{ filteredPinnedNotes.length }}</el-tag>
             </h3>
-            <el-empty v-if="pinnedNotes.length === 0" description="暂无置顶笔记" :image-size="60" />
             <el-row :gutter="16">
-              <el-col v-for="note in pinnedNotes" :key="note.id" :span="8">
+              <el-col v-for="note in filteredPinnedNotes" :key="note.id" :span="8">
                 <note-card
                   :note="note"
                   @view="openView"
@@ -49,11 +116,11 @@
           <div class="section">
             <h3 class="section-title">
               <el-icon><Document /></el-icon> 全部笔记
-              <el-tag size="small" type="info" round>{{ normalNotes.length }}</el-tag>
+              <el-tag size="small" type="info" round>{{ filteredNormalNotes.length }}</el-tag>
             </h3>
-            <el-empty v-if="normalNotes.length === 0" description="还没有笔记，点击上方新建笔记开始记录吧" :image-size="60" />
+            <el-empty v-if="filteredNormalNotes.length === 0" :description="searchKeyword || selectedTags.length < allTags.length ? '没有符合条件的笔记' : '还没有笔记，点击上方新建笔记开始记录吧'" :image-size="60" />
             <el-row :gutter="16">
-              <el-col v-for="note in normalNotes" :key="note.id" :span="8">
+              <el-col v-for="note in filteredNormalNotes" :key="note.id" :span="8">
                 <note-card
                   :note="note"
                   @view="openView"
@@ -63,6 +130,20 @@
                 />
               </el-col>
             </el-row>
+          </div>
+
+          <!-- 分页 -->
+          <div class="pagination-bar" v-if="pageTotal > 0">
+            <el-pagination
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="pageTotal"
+              :current-page="pageNum"
+              :page-size="pageSize"
+              :page-sizes="[9, 12, 24, 48]"
+              @current-change="onPageChange"
+              @size-change="onSizeChange"
+            />
           </div>
         </el-tab-pane>
 
@@ -110,7 +191,7 @@
             default-first-option
             style="width: 100%"
           >
-            <el-option v-for="t in defaultTags" :key="t" :label="t" :value="t" />
+            <el-option v-for="t in tagSelectOptions" :key="t" :label="t" :value="t" />
           </el-select>
         </el-form-item>
 
@@ -214,24 +295,43 @@
         </el-timeline>
       </div>
     </el-drawer>
+
+    <!-- 词云弹窗 -->
+    <el-dialog v-model="wordCloudVisible" title="笔记词云" width="640px" top="10vh">
+      <el-empty v-if="wordCloudWords.length === 0" description="暂无笔记内容生成词云" :image-size="80" />
+      <div v-else class="word-cloud">
+        <span
+          v-for="w in wordCloudWords"
+          :key="w.name"
+          class="wc-word"
+          :style="{ fontSize: wordSize(w.value, wordMax()) + 'px', color: wcColor(w.value, wordMax()) }"
+          :title="'出现 ' + w.value + ' 次'"
+        >{{ w.name }}</span>
+      </div>
+      <div class="wc-tip">基于所有笔记标题与正文的高频词生成，字号越大出现频次越高</div>
+    </el-dialog>
   </div>
 </template>
 
 <script>
-import { Top, Document, EditPen, Download, MagicStick } from '@element-plus/icons-vue'
+import { Top, Document, EditPen, Download, MagicStick, Search, ArrowDown, ArrowLeft, ArrowRight, Histogram } from '@element-plus/icons-vue'
 import NoteCard from '../components/NoteCard.vue'
 import { renderMarkdown } from '../utils/markdown'
 
 export default {
   name: 'Notes',
-  components: { Top, Document, EditPen, Download, MagicStick, NoteCard },
+  components: { Top, Document, EditPen, Download, MagicStick, Search, ArrowDown, ArrowLeft, ArrowRight, Histogram, NoteCard },
   data() {
     return {
       // 默认标签
       defaultTags: ['学习', '生活', '科研', '出行'],
       activeTab: 'notes',
-      pinnedNotes: [],
-      normalNotes: [],
+      // 分页数据（后端分页）
+      pageRecords: [],
+      pageNum: 1,
+      pageSize: 9,
+      pageTotal: 0,
+      tagStats: [],
       trashNotes: [],
       exportingCsv: false,
       exportingWord: false,
@@ -249,6 +349,15 @@ export default {
       detailVisible: false,
       detail: null,
       saving: false,
+      // 标签筛选 / 搜索 / 词云
+      searchKeyword: '',
+      selectedTags: [],
+      tagSearchKey: '',
+      tagPage: 0,
+      tagSlideDir: 'next',
+      tagPanelCollapsed: false,
+      wordCloudVisible: false,
+      wordCloudWords: [],
       form: {
         id: null,
         title: '',
@@ -258,28 +367,184 @@ export default {
     }
   },
   created() {
-    this.fetchNotes()
+    this.fetchPage()
+    this.fetchTagStats()
     this.fetchTrash()
   },
-  methods: {
-    // 切换 Tab 时刷新回收站
-    onTabChange(tab) {
-      if (tab === 'trash') {
-        this.fetchTrash()
+  watch: {
+    // 搜索关键字防抖 300ms 后重新查询并回到第 1 页
+    searchKeyword() {
+      this.scheduleReload()
+    },
+    // 勾选标签变化立即重新查询
+    selectedTags() {
+      this.pageNum = 1
+      this.fetchPage()
+    },
+    // 标签统计变化：首次全选，后续只勾选新出现的标签
+    tagStats(newStats, oldStats) {
+      if (!oldStats || oldStats.length === 0) {
+        // 首次加载：默认全选
+        this.selectedTags = this.allTags.slice()
+      } else {
+        // 后续刷新：只自动勾选新出现的标签
+        const oldTags = oldStats.map(t => t.tag)
+        const newTags = this.allTags.filter(t => !oldTags.includes(t))
+        if (newTags.length) {
+          this.selectedTags = [...this.selectedTags, ...newTags]
+        }
       }
     },
-    // 拉取当前用户笔记（后端按置顶/未置顶分为两个列表）
-    async fetchNotes() {
+    // 搜索标签时重置到第一页
+    tagSearchKey() {
+      this.tagPage = 0
+    }
+  },
+  computed: {
+    // 所有不重复标签（来自后端全量统计，含自定义标签）
+    allTags() {
+      return this.tagStats.map(t => t.tag)
+    },
+    // 标签面板按搜索关键字过滤后的显示列表
+    visibleTags() {
+      if (!this.tagSearchKey) return this.allTags
+      const kw = this.tagSearchKey.toLowerCase()
+      return this.allTags.filter(t => t.toLowerCase().includes(kw))
+    },
+    // 标签总页数（每页 5 个）
+    totalTagPages() {
+      return Math.max(1, Math.ceil(this.visibleTags.length / 5))
+    },
+    // 当前页显示的标签（5 个一组）
+    pagedTags() {
+      const start = this.tagPage * 5
+      return this.visibleTags.slice(start, start + 5)
+    },
+    // 标签下拉选项：默认标签 + 后端已有标签（含自定义），去重
+    tagSelectOptions() {
+      const set = new Set(this.defaultTags)
+      this.allTags.forEach(t => set.add(t))
+      if (this.form.tag && !set.has(this.form.tag)) set.add(this.form.tag)
+      return Array.from(set)
+    },
+    // 当前页内的置顶笔记
+    filteredPinnedNotes() {
+      return this.pageRecords.filter(n => n.isPinned === 1)
+    },
+    // 当前页内的未置顶笔记
+    filteredNormalNotes() {
+      return this.pageRecords.filter(n => n.isPinned !== 1)
+    }
+  },
+  methods: {
+    // 统计某标签下的笔记数（全量，来自后端）
+    tagCount(tag) {
+      const item = this.tagStats.find(t => t.tag === tag)
+      return item ? item.count : 0
+    },
+    // 搜索输入防抖
+    scheduleReload() {
+      clearTimeout(this._searchTimer)
+      this._searchTimer = setTimeout(() => {
+        this.pageNum = 1
+        this.fetchPage()
+      }, 300)
+    },
+    // 拉取分页笔记（关键字 / 未勾选标签下沉后端排除）
+    async fetchPage() {
       try {
-        const res = await this.$http.get('/api/notes')
+        const params = {
+          pageNum: this.pageNum,
+          pageSize: this.pageSize
+        }
+        if (this.searchKeyword) params.keyword = this.searchKeyword
+        // 未勾选的标签 = 全部标签 - 已勾选标签
+        const excluded = this.allTags.filter(t => !this.selectedTags.includes(t))
+        if (excluded.length) params.excludeTag = excluded
+        const res = await this.$http.get('/api/notes/page', { params })
         if (res.data.code === 200) {
-          this.pinnedNotes = res.data.data.pinned || []
-          this.normalNotes = res.data.data.normal || []
+          this.pageRecords = res.data.data.records || []
+          this.pageTotal = res.data.data.total || 0
         }
       } catch (err) {
         if (!err.response || err.response.status !== 401) {
           this.$message.error('加载笔记失败')
         }
+      }
+    },
+    // 拉取全量标签统计
+    async fetchTagStats() {
+      try {
+        const res = await this.$http.get('/api/notes/tags')
+        if (res.data.code === 200) {
+          this.tagStats = res.data.data || []
+        }
+      } catch (err) {
+        // 标签统计失败不阻断主流程
+      }
+    },
+    // 分页：页码变化
+    onPageChange(page) {
+      this.pageNum = page
+      this.fetchPage()
+    },
+    // 分页：每页条数变化
+    onSizeChange(size) {
+      this.pageSize = size
+      this.pageNum = 1
+      this.fetchPage()
+    },
+    // 标签轮播：上一页
+    prevTagPage() {
+      if (this.tagPage > 0) {
+        this.tagSlideDir = 'prev'
+        this.tagPage--
+      }
+    },
+    // 标签轮播：下一页
+    nextTagPage() {
+      if (this.tagPage < this.totalTagPages - 1) {
+        this.tagSlideDir = 'next'
+        this.tagPage++
+      }
+    },
+    // 去除 HTML 标签（词云已在后端处理，此方法保留供其他展示复用）
+    stripHtml(html) {
+      const div = document.createElement('div')
+      div.innerHTML = html
+      return div.textContent || div.innerText || ''
+    },
+    // 打开词云弹窗：数据由后端全量统计
+    async openWordCloud() {
+      try {
+        const res = await this.$http.get('/api/notes/wordcloud', { params: { limit: 50 } })
+        if (res.data.code === 200) {
+          this.wordCloudWords = res.data.data || []
+          this.wordCloudVisible = true
+        }
+      } catch (err) {
+        this.$message.error('词云生成失败')
+      }
+    },
+    // 词云词的字号：频率越高字号越大（12px ~ 36px）
+    wordSize(value, max) {
+      if (!max) return 14
+      return Math.round(12 + (value / max) * 24)
+    },
+    wordMax() {
+      return this.wordCloudWords.length ? this.wordCloudWords[0].value : 1
+    },
+    // 词云颜色：高频偏暖色，低频偏冷色
+    wcColor(value, max) {
+      const ratio = max ? value / max : 0
+      if (ratio > 0.66) return '#e6a23c'
+      if (ratio > 0.33) return '#409eff'
+      return '#909399'
+    },
+    // 切换 Tab 时刷新回收站
+    onTabChange(tab) {
+      if (tab === 'trash') {
+        this.fetchTrash()
       }
     },
 
@@ -516,7 +781,8 @@ export default {
         if (res.data.code === 200) {
           this.$message.success(this.form.id ? '修改成功' : '新建成功')
           this.dialogVisible = false
-          this.fetchNotes()
+          this.fetchPage()
+          this.fetchTagStats()
         } else {
           this.$message.error(res.data.message || '保存失败')
         }
@@ -532,7 +798,8 @@ export default {
         const res = await this.$http.put(`/api/notes/pin/${note.id}`)
         if (res.data.code === 200) {
           this.$message.success(note.isPinned === 1 ? '已取消置顶' : '已置顶')
-          this.fetchNotes()
+          this.fetchPage()
+          this.fetchTagStats()
         }
       } catch (err) {
         this.$message.error('操作失败')
@@ -549,7 +816,8 @@ export default {
           const res = await this.$http.delete(`/api/notes/${note.id}`)
           if (res.data.code === 200) {
             this.$message.success('已移入回收站')
-            this.fetchNotes()
+            this.fetchPage()
+          this.fetchTagStats()
             this.fetchTrash()
           }
         } catch (err) {
@@ -577,7 +845,8 @@ export default {
         if (res.data.code === 200) {
           this.$message.success('恢复成功')
           this.fetchTrash()
-          this.fetchNotes()
+          this.fetchPage()
+          this.fetchTagStats()
         } else {
           this.$message.error(res.data.message || '恢复失败')
         }
@@ -828,5 +1097,123 @@ export default {
 .trash-card-actions {
   display: flex;
   gap: 8px;
+}
+
+/* ===== 标签筛选面板 ===== */
+.pagination-bar {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 8px;
+}
+.tag-filter-panel {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.tag-filter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: #f5f7fa;
+  user-select: none;
+}
+.tag-filter-head:hover {
+  background: #ecf5ff;
+}
+.tag-filter-title {
+  font-size: 14px;
+  color: #606266;
+  flex: 1;
+}
+.collapse-arrow {
+  transition: transform 0.2s;
+}
+.collapse-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+.tag-filter-body {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tag-filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tag-carousel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tag-nav-btn {
+  flex-shrink: 0;
+  padding: 4px 8px;
+}
+.tag-page {
+  flex: 1;
+  overflow: hidden;
+}
+.tag-checkbox-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px 12px;
+}
+.tag-checkbox-item {
+  margin-right: 0;
+  display: flex;
+  align-items: center;
+}
+/* 推拉动画：下一页 */
+.tag-slide-next-enter-active,
+.tag-slide-next-leave-active,
+.tag-slide-prev-enter-active,
+.tag-slide-prev-leave-active {
+  transition: transform 0.3s ease;
+}
+.tag-slide-next-enter-from { transform: translateX(100%); }
+.tag-slide-next-leave-to { transform: translateX(-100%); }
+/* 推拉动画：上一页 */
+.tag-slide-prev-enter-from { transform: translateX(-100%); }
+.tag-slide-prev-leave-to { transform: translateX(100%); }
+.tag-count {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 4px;
+}
+
+/* ===== 词云 ===== */
+.word-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 24px 12px;
+  min-height: 260px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #ecf5ff 100%);
+  border-radius: 8px;
+}
+.wc-word {
+  cursor: default;
+  font-weight: 600;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.wc-word:hover {
+  transform: scale(1.15);
+}
+.wc-tip {
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+  margin-top: 12px;
 }
 </style>

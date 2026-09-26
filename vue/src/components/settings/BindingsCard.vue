@@ -1,57 +1,55 @@
 <template>
-  <div class="bindings-page">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>账号绑定</span>
-          <el-button size="small" @click="loadBindings">刷新</el-button>
-        </div>
-      </template>
-
-      <el-alert
-        title="绑定第三方账号后，可以直接使用第三方平台登录，并且可以操作该平台的文档/表格。"
-        type="info"
-        :closable="false"
-        show-icon
-        class="tip"
-      ></el-alert>
-
-      <div class="bind-actions">
-        <el-button
-          v-for="provider in providers"
-          :key="provider.provider"
-          type="primary"
-          :disabled="isBound(provider.provider)"
-          @click="bind(provider.provider)"
-        >
-          {{ isBound(provider.provider) ? `已绑定${provider.displayName}` : `绑定${provider.displayName}` }}
-        </el-button>
-        <el-text v-if="providers.length === 0" type="info">暂无可绑定的第三方平台</el-text>
+  <el-card class="setting-card">
+    <template #header>
+      <div class="card-header">
+        <span>第三方账号</span>
+        <el-button size="small" @click="loadBindings">刷新</el-button>
       </div>
+    </template>
 
-      <el-table :data="bindings" v-loading="loading" style="width: 100%">
-        <el-table-column label="平台" width="120">
-          <template #default="{ row }">{{ displayName(row.provider) }}</template>
-        </el-table-column>
-        <el-table-column prop="nickname" label="第三方昵称" show-overflow-tooltip></el-table-column>
-        <el-table-column prop="mobile" label="手机号" width="150"></el-table-column>
-        <el-table-column prop="bindTime" label="绑定时间" width="180"></el-table-column>
-        <el-table-column label="操作" width="120">
-          <template #default="{ row }">
-            <el-button link type="danger" @click="unbind(row.provider)">解绑</el-button>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="还没有绑定任何第三方账号" :image-size="80"></el-empty>
+    <el-alert
+      title="绑定第三方账号后，可以直接使用第三方平台登录，并且可以操作该平台的文档/表格。"
+      type="info"
+      :closable="false"
+      show-icon
+      class="tip"
+    ></el-alert>
+
+    <div class="bind-actions">
+      <el-button
+        v-for="provider in providers"
+        :key="provider.provider"
+        type="primary"
+        :disabled="isBound(provider.provider)"
+        @click="bind(provider.provider)"
+      >
+        {{ isBound(provider.provider) ? `已绑定${provider.displayName}` : `绑定${provider.displayName}` }}
+      </el-button>
+      <el-text v-if="providers.length === 0" type="info">暂无可绑定的第三方平台</el-text>
+    </div>
+
+    <el-table :data="bindings" v-loading="loading" style="width: 100%">
+      <el-table-column label="平台" width="120">
+        <template #default="{ row }">{{ displayName(row.provider) }}</template>
+      </el-table-column>
+      <el-table-column prop="nickname" label="第三方昵称" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="mobile" label="手机号" width="150"></el-table-column>
+      <el-table-column prop="bindTime" label="绑定时间" width="180"></el-table-column>
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button link type="danger" @click="unbind(row.provider)">解绑</el-button>
         </template>
-      </el-table>
-    </el-card>
-  </div>
+      </el-table-column>
+      <template #empty>
+        <el-empty description="还没有绑定任何第三方账号" :image-size="80"></el-empty>
+      </template>
+    </el-table>
+  </el-card>
 </template>
 
 <script>
 export default {
-  name: 'Bindings',
+  name: 'BindingsCard',
   data() {
     return {
       providers: [],
@@ -62,10 +60,10 @@ export default {
   created() {
     this.loadProviders()
     this.loadBindings()
-    // 从第三方绑定回调回来时给出提示
+    // OAuth 回跳成功提示
     if (this.$route.query.bind) {
       this.$message.success('绑定成功')
-      this.$router.replace({ path: '/settings/bindings' })
+      this.$router.replace({ path: '/settings/profile', query: { tab: 'bindings' } })
     }
   },
   methods: {
@@ -76,7 +74,7 @@ export default {
           this.providers = res.data.data || []
         }
       } catch (err) {
-        // 忽略，页面仍可查看已有绑定
+        // 忽略
       }
     },
     async loadBindings() {
@@ -144,16 +142,15 @@ export default {
 </script>
 
 <style scoped>
-.bindings-page {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px;
-  text-align: left;
+.setting-card {
+  margin-bottom: 20px;
 }
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-weight: 600;
+  font-size: 15px;
 }
 .tip {
   margin-bottom: 16px;

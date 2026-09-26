@@ -1,5 +1,6 @@
 package com.example.backend.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.dto.NoteDTO;
 import com.example.backend.entity.Note;
 
@@ -10,6 +11,29 @@ import java.util.Map;
  * 笔记服务。
  */
 public interface NoteService {
+
+    /**
+     * 分页查询当前登录用户的笔记（置顶优先，按修改时间倒序）。
+     *
+     * @param pageNum      页码（从 1 开始）
+     * @param pageSize     每页条数
+     * @param keyword      标题/正文关键字，为空不过滤
+     * @param excludeTags  需隐藏的标签集合（多选），为空不过滤
+     */
+    Page<Note> pageMyNotes(String username, long pageNum, long pageSize,
+                           String keyword, List<String> excludeTags);
+
+    /**
+     * 统计当前用户各标签下的笔记数量（全量，供标签筛选面板展示）。
+     *
+     * @return 每项含 tag（标签名）和 count（数量），按数量倒序
+     */
+    List<Map<String, Object>> listTagStats(String username);
+
+    /**
+     * 基于当前用户全部笔记的标题与正文生成词云（2-gram 词频，标题/标签加权）。
+     */
+    List<Map<String, Object>> wordCloud(String username, int limit);
 
     /**
      * 查询当前登录用户的所有笔记，按置顶 / 未置顶分为两个列表。

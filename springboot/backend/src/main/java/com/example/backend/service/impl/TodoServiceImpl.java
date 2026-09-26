@@ -2,6 +2,7 @@ package com.example.backend.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.dto.TodoDTO;
 import com.example.backend.entity.Todo;
 import com.example.backend.entity.User;
@@ -9,11 +10,17 @@ import com.example.backend.exception.BusinessException;
 import com.example.backend.mapper.TodoMapper;
 import com.example.backend.service.TodoService;
 import com.example.backend.service.UserService;
+import com.example.backend.util.ExportUtil;
+import com.example.backend.util.WordFreqUtil;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,6 +45,90 @@ public class TodoServiceImpl implements TodoService {
         return todoMapper.selectList(queryWrapper).stream()
                 .map(this::toDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public Page<TodoDTO> pageTodos(String username, long pageNum, long pageSize,
+                                   String status, String keyword, List<String> excludeLabels) {
+        Long userId = requireUserId(username);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false);
+        // 完成状态过滤
+        if ("pending".equalsIgnoreCase(status)) {
+            wrapper.eq(Todo::getCompleted, false);
+        } else if ("done".equalsIgnoreCase(status)) {
+            wrapper.eq(Todo::getCompleted, true);
+        }
+        // 关键字：标题或正文模糊匹配
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String kw = keyword.trim();
+            wrapper.and(w -> w.like(Todo::getTitle, kw).or().like(Todo::getContent, kw));
+        }
+        // 隐藏标签：多选 notIn
+        if (excludeLabels != null && !excludeLabels.isEmpty()) {
+            List<String> valid = excludeLabels.stream()
+                    .filter(t -> t != null && !t.trim().isEmpty())
+                    .map(String::trim)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!valid.isEmpty()) {
+                wrapper.notIn(Todo::getLabel, valid);
+            }
+        }
+        // 置顶优先，其次按修改时间倒序
+        wrapper.orderByDesc(Todo::getTop)
+                .orderByDesc(Todo::getUpdatedAt)
+                .orderByDesc(Todo::getId);
+        Page<Todo> page = todoMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        // convert 返回 IPage，实际仍是同一个 Page 实例，强转回 Page
+        @SuppressWarnings("unchecked")
+        Page<TodoDTO> dtoPage = (Page<TodoDTO>) page.convert(this::toDTO);
+        return dtoPage;
+    }
+
+    @Override
+    public List<Map<String, Object>> listLabelStats(String username) {
+        Long userId = requireUserId(username);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
+                .select(Todo::getLabel);
+        Map<String, Long> counts = todoMapper.selectList(wrapper).stream()
+                .filter(t -> t != null && t.getLabel() != null)
+                .map(t -> t.getLabel().trim())
+                .filter(t -> !t.isEmpty())
+                .collect(Collectors.groupingBy(t -> t, Collectors.counting()));
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(e -> {
+                    Map<String, Object> item = new LinkedHashMap<>(2);
+                    item.put("label", e.getKey());
+                    item.put("count", e.getValue());
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Map<String, Object>> wordCloud(String username, int limit) {
+        Long userId = requireUserId(username);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
+                .select(Todo::getTitle, Todo::getContent, Todo::getLabel);
+        List<Todo> todos = todoMapper.selectList(wrapper);
+        List<String> texts = new ArrayList<>();
+        for (Todo todo : todos) {
+            texts.add(ExportUtil.htmlToText(todo.getContent()));
+            if (todo.getTitle() != null && !todo.getTitle().isEmpty()) {
+                texts.addAll(Collections.nCopies(3, todo.getTitle()));
+            }
+            if (todo.getLabel() != null && !todo.getLabel().trim().isEmpty()) {
+                texts.addAll(Collections.nCopies(5, todo.getLabel().trim()));
+            }
+        }
+        return WordFreqUtil.topWords(texts, limit <= 0 ? 50 : limit);
     }
 
     @Override

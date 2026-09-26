@@ -41,7 +41,7 @@ export default {
       // 绑定成功回跳
       if (query.bind) {
         this.finish('success', '绑定成功', `已成功绑定${query.bind}账号`)
-        setTimeout(() => this.$router.replace('/settings/bindings'), 1200)
+        setTimeout(() => this.$router.replace('/settings/profile?tab=bindings&bind=' + encodeURIComponent(query.bind)), 1200)
         return
       }
       if (!query.ticket) {

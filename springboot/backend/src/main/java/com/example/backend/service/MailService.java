@@ -13,6 +13,7 @@ import java.util.List;
 
 /**
  * 邮件推送服务：组装 HTML 邮件并通过 JavaMailSender 发送。
+ * HTML 构建方法为 public，可被 NotificationService 复用（消息格式与邮件一致）。
  * 所有方法均吞掉异常（仅打印到 stderr），保证定时任务不会因单条邮件失败而中断。
  */
 @Service
@@ -29,33 +30,94 @@ public class MailService {
         this.mailSender = mailSender;
     }
 
+    // ==================== HTML 构建（public，供消息栏复用） ====================
+
+    /** 待办提醒 HTML（逾期 + 今日到期列表） */
+    public String buildTodoReminderHtml(String username, List<Todo> overdueTodos, List<Todo> dueTodayTodos) {
+        StringBuilder html = new StringBuilder();
+        html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;\">");
+        html.append("<h3>你好，").append(escape(username)).append("，今天的待办提醒来啦</h3>");
+
+        html.append("<h4 style=\"color:#d9534f;\">⚠ 逾期待办（").append(overdueTodos.size()).append("）</h4>");
+        if (overdueTodos.isEmpty()) {
+            html.append("<p>暂无逾期待办，表现很棒！</p>");
+        } else {
+            appendTodoList(html, overdueTodos, true);
+        }
+
+        html.append("<h4 style=\"color:#0275d8;\">📅 今日将到期待办（").append(dueTodayTodos.size()).append("）</h4>");
+        if (dueTodayTodos.isEmpty()) {
+            html.append("<p>今天没有将到期的待办</p>");
+        } else {
+            appendTodoList(html, dueTodayTodos, false);
+        }
+
+        html.append("<hr><p style=\"font-size:12px;color:#999;\">本消息由随手工作台自动发送</p>");
+        html.append("</div>");
+        return html.toString();
+    }
+
+    /** 单条待办提醒 HTML（到达 remind_time 时） */
+    public String buildSingleTodoReminderHtml(String username, Todo todo) {
+        StringBuilder html = new StringBuilder();
+        html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;line-height:1.6;\">");
+        html.append("<h3>⏰ 提醒时间到了</h3>");
+        html.append("<p>你好，").append(escape(username)).append("，你设置的待办提醒时间已到达：</p>");
+        html.append("<table style=\"border-collapse:collapse;width:100%;font-size:14px;margin:12px 0;\">");
+        html.append("<tr><th style=\"border:1px solid #ddd;padding:6px;text-align:left;background:#f5f5f5;\">标题</th>")
+                .append("<td style=\"border:1px solid #ddd;padding:6px;\">").append(escape(safe(todo.getTitle()))).append("</td></tr>");
+        html.append("<tr><th style=\"border:1px solid #ddd;padding:6px;text-align:left;background:#f5f5f5;\">开始时间</th>")
+                .append("<td style=\"border:1px solid #ddd;padding:6px;\">").append(format(todo.getStartTime())).append("</td></tr>");
+        html.append("<tr><th style=\"border:1px solid #ddd;padding:6px;text-align:left;background:#f5f5f5;\">截止时间</th>")
+                .append("<td style=\"border:1px solid #ddd;padding:6px;\">").append(format(todo.getEndTime())).append("</td></tr>");
+        html.append("</table>");
+        if (todo.getContent() != null && !todo.getContent().trim().isEmpty()) {
+            html.append("<p style=\"color:#666;\">任务内容：</p>");
+            html.append("<div style=\"background:#f9f9f9;padding:10px;border-radius:4px;\">")
+                    .append(escape(safe(todo.getContent())).replace("<br>", ""))
+                    .append("</div>");
+        }
+        html.append("<hr><p style=\"font-size:12px;color:#999;\">本消息由随手工作台自动发送</p>");
+        html.append("</div>");
+        return html.toString();
+    }
+
+    /** AI 周报/月报 HTML */
+    public String buildWeeklyReportHtml(String username, String reportContent) {
+        StringBuilder html = new StringBuilder();
+        html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;line-height:1.6;\">");
+        html.append("<h3>你好，").append(escape(username)).append("，这是你的待办报告</h3>");
+        String body = reportContent == null ? "" : reportContent;
+        body = escape(body);
+        String[] blocks = body.split("\n\\s*\n");
+        for (String block : blocks) {
+            String trimmed = block.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.startsWith("### ")) {
+                html.append("<h5>").append(trimmed.substring(4)).append("</h5>");
+            } else if (trimmed.startsWith("## ")) {
+                html.append("<h4>").append(trimmed.substring(3)).append("</h4>");
+            } else if (trimmed.startsWith("# ")) {
+                html.append("<h3>").append(trimmed.substring(2)).append("</h3>");
+            } else {
+                html.append("<p>").append(trimmed.replace("\n", "<br>")).append("</p>");
+            }
+        }
+        html.append("<hr><p style=\"font-size:12px;color:#999;\">本消息由随手工作台自动发送</p>");
+        html.append("</div>");
+        return html.toString();
+    }
+
+    // ==================== 邮件发送 ====================
+
     /** 待办提醒：列出逾期待办与今日将到期待办 */
     public void sendTodoReminder(String toEmail, String username,
                                  List<Todo> overdueTodos, List<Todo> dueTodayTodos) {
         try {
             String subject = "【随手工作台】待办提醒";
-            StringBuilder html = new StringBuilder();
-            html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;\">");
-            html.append("<h3>你好，").append(escape(username)).append("，今天的待办提醒来啦</h3>");
-
-            html.append("<h4 style=\"color:#d9534f;\">⚠ 逾期待办（").append(overdueTodos.size()).append("）</h4>");
-            if (overdueTodos.isEmpty()) {
-                html.append("<p>暂无逾期待办，表现很棒！</p>");
-            } else {
-                appendTodoList(html, overdueTodos, true);
-            }
-
-            html.append("<h4 style=\"color:#0275d8;\">📅 今日将到期待办（").append(dueTodayTodos.size()).append("）</h4>");
-            if (dueTodayTodos.isEmpty()) {
-                html.append("<p>今天没有将到期的待办</p>");
-            } else {
-                appendTodoList(html, dueTodayTodos, false);
-            }
-
-            html.append("<hr><p style=\"font-size:12px;color:#999;\">本邮件由随手工作台自动发送，请勿直接回复</p>");
-            html.append("</div>");
-
-            sendHtml(toEmail, subject, html.toString());
+            sendHtml(toEmail, subject, buildTodoReminderHtml(username, overdueTodos, dueTodayTodos));
         } catch (Exception e) {
             System.err.println("[MailService] sendTodoReminder 失败 to=" + toEmail + " err=" + e.getMessage());
         }
@@ -68,17 +130,14 @@ public class MailService {
             StringBuilder html = new StringBuilder();
             html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;\">");
             html.append("<h3>你好，").append(escape(username)).append("，这是你今天的待办摘要</h3>");
-
             html.append("<h4>📋 未完成待办（").append(pendingTodos.size()).append("）</h4>");
             if (pendingTodos.isEmpty()) {
                 html.append("<p>今天没有未完成待办，享受轻松一天吧！</p>");
             } else {
                 appendTodoList(html, pendingTodos, false);
             }
-
             html.append("<hr><p style=\"font-size:12px;color:#999;\">本邮件由随手工作台自动发送，请勿直接回复</p>");
             html.append("</div>");
-
             sendHtml(toEmail, subject, html.toString());
         } catch (Exception e) {
             System.err.println("[MailService] sendDailySummary 失败 to=" + toEmail + " err=" + e.getMessage());
@@ -89,27 +148,7 @@ public class MailService {
     public void sendSingleTodoReminder(String toEmail, String username, Todo todo) {
         try {
             String subject = "【随手工作台】待办提醒：" + safe(todo.getTitle());
-            StringBuilder html = new StringBuilder();
-            html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;line-height:1.6;\">");
-            html.append("<h3>⏰ 提醒时间到了</h3>");
-            html.append("<p>你好，").append(escape(username)).append("，你设置的待办提醒时间已到达：</p>");
-            html.append("<table style=\"border-collapse:collapse;width:100%;font-size:14px;margin:12px 0;\">");
-            html.append("<tr><th style=\"border:1px solid #ddd;padding:6px;text-align:left;background:#f5f5f5;\">标题</th>")
-                    .append("<td style=\"border:1px solid #ddd;padding:6px;\">").append(escape(safe(todo.getTitle()))).append("</td></tr>");
-            html.append("<tr><th style=\"border:1px solid #ddd;padding:6px;text-align:left;background:#f5f5f5;\">开始时间</th>")
-                    .append("<td style=\"border:1px solid #ddd;padding:6px;\">").append(format(todo.getStartTime())).append("</td></tr>");
-            html.append("<tr><th style=\"border:1px solid #ddd;padding:6px;text-align:left;background:#f5f5f5;\">截止时间</th>")
-                    .append("<td style=\"border:1px solid #ddd;padding:6px;\">").append(format(todo.getEndTime())).append("</td></tr>");
-            html.append("</table>");
-            if (todo.getContent() != null && !todo.getContent().trim().isEmpty()) {
-                html.append("<p style=\"color:#666;\">任务内容：</p>");
-                html.append("<div style=\"background:#f9f9f9;padding:10px;border-radius:4px;\">")
-                        .append(escape(safe(todo.getContent())).replace("<br>", ""))
-                        .append("</div>");
-            }
-            html.append("<hr><p style=\"font-size:12px;color:#999;\">本邮件由随手工作台自动发送，请勿直接回复</p>");
-            html.append("</div>");
-            sendHtml(toEmail, subject, html.toString());
+            sendHtml(toEmail, subject, buildSingleTodoReminderHtml(username, todo));
         } catch (Exception e) {
             System.err.println("[MailService] sendSingleTodoReminder 失败 to=" + toEmail + " err=" + e.getMessage());
         }
@@ -119,35 +158,7 @@ public class MailService {
     public void sendWeeklyReport(String toEmail, String username, String reportContent) {
         try {
             String subject = "【随手工作台】AI 待办周报";
-            StringBuilder html = new StringBuilder();
-            html.append("<div style=\"font-family:Arial,'Microsoft YaHei',sans-serif;color:#333;line-height:1.6;\">");
-            html.append("<h3>你好，").append(escape(username)).append("，这是你本周的待办周报</h3>");
-            // AI 内容为 Markdown 文本，按段落简单转 HTML
-            String body = reportContent == null ? "" : reportContent;
-            // 简单转义，避免 HTML 注入
-            body = escape(body);
-            // 按 \n\n 拆段，每段用 <p> 包裹；保留 ## 标题样式
-            String[] blocks = body.split("\n\\s*\n");
-            for (String block : blocks) {
-                String trimmed = block.trim();
-                if (trimmed.isEmpty()) {
-                    continue;
-                }
-                if (trimmed.startsWith("### ")) {
-                    html.append("<h5>").append(trimmed.substring(4)).append("</h5>");
-                } else if (trimmed.startsWith("## ")) {
-                    html.append("<h4>").append(trimmed.substring(3)).append("</h4>");
-                } else if (trimmed.startsWith("# ")) {
-                    html.append("<h3>").append(trimmed.substring(2)).append("</h3>");
-                } else {
-                    // 行内换行替换为 <br>
-                    html.append("<p>").append(trimmed.replace("\n", "<br>")).append("</p>");
-                }
-            }
-            html.append("<hr><p style=\"font-size:12px;color:#999;\">本邮件由随手工作台自动发送，请勿直接回复</p>");
-            html.append("</div>");
-
-            sendHtml(toEmail, subject, html.toString());
+            sendHtml(toEmail, subject, buildWeeklyReportHtml(username, reportContent));
         } catch (Exception e) {
             System.err.println("[MailService] sendWeeklyReport 失败 to=" + toEmail + " err=" + e.getMessage());
         }

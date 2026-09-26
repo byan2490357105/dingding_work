@@ -2,6 +2,7 @@ package com.example.backend.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.dto.NoteDTO;
 import com.example.backend.entity.Note;
 import com.example.backend.entity.User;
@@ -9,12 +10,18 @@ import com.example.backend.exception.BusinessException;
 import com.example.backend.mapper.NoteMapper;
 import com.example.backend.service.NoteService;
 import com.example.backend.service.UserService;
+import com.example.backend.util.ExportUtil;
+import com.example.backend.util.WordFreqUtil;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class NoteServiceImpl implements NoteService {
@@ -25,6 +32,83 @@ public class NoteServiceImpl implements NoteService {
     public NoteServiceImpl(NoteMapper noteMapper, UserService userService) {
         this.noteMapper = noteMapper;
         this.userService = userService;
+    }
+
+    @Override
+    public Page<Note> pageMyNotes(String username, long pageNum, long pageSize,
+                                  String keyword, List<String> excludeTags) {
+        Long userId = requireUserId(username);
+        LambdaQueryWrapper<Note> wrapper = baseWrapper(userId);
+        // 关键字：标题或正文模糊匹配
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String kw = keyword.trim();
+            wrapper.and(w -> w.like(Note::getTitle, kw).or().like(Note::getContent, kw));
+        }
+        // 隐藏标签：多选 notIn（空集合不能拼进 SQL）
+        List<String> validExclude = normalizeTags(excludeTags);
+        if (validExclude != null) {
+            wrapper.notIn(Note::getTag, validExclude);
+        }
+        // 置顶优先，其次按修改时间、id 倒序
+        wrapper.orderByDesc(Note::getIsPinned)
+                .orderByDesc(Note::getUpdateTime)
+                .orderByDesc(Note::getId);
+        return noteMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+    }
+
+    @Override
+    public List<Map<String, Object>> listTagStats(String username) {
+        Long userId = requireUserId(username);
+        List<Note> notes = noteMapper.selectList(baseWrapper(userId)
+                .select(Note::getTag));
+        Map<String, Long> counts = notes.stream()
+                .filter(n -> n != null && n.getTag() != null)
+                .map(n -> n.getTag().trim())
+                .filter(t -> !t.isEmpty())
+                .collect(Collectors.groupingBy(t -> t, Collectors.counting()));
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(e -> {
+                    Map<String, Object> item = new LinkedHashMap<>(2);
+                    item.put("tag", e.getKey());
+                    item.put("count", e.getValue());
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Map<String, Object>> wordCloud(String username, int limit) {
+        Long userId = requireUserId(username);
+        List<Note> notes = noteMapper.selectList(baseWrapper(userId)
+                .select(Note::getTitle, Note::getContent, Note::getTag));
+        List<String> texts = new ArrayList<>();
+        for (Note note : notes) {
+            // 正文先去 HTML 标签
+            texts.add(ExportUtil.htmlToText(note.getContent()));
+            // 标题加权 ×3
+            if (note.getTitle() != null && !note.getTitle().isEmpty()) {
+                texts.addAll(Collections.nCopies(3, note.getTitle()));
+            }
+            // 标签加权 ×5
+            if (note.getTag() != null && !note.getTag().trim().isEmpty()) {
+                texts.addAll(Collections.nCopies(5, note.getTag().trim()));
+            }
+        }
+        return WordFreqUtil.topWords(texts, limit <= 0 ? 50 : limit);
+    }
+
+    /** 过滤掉空白标签；全为空时返回 null 表示不拼接 notIn */
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return null;
+        }
+        List<String> valid = tags.stream()
+                .filter(t -> t != null && !t.trim().isEmpty())
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toList());
+        return valid.isEmpty() ? null : valid;
     }
 
     @Override

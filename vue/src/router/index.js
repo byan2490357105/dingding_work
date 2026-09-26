@@ -6,7 +6,6 @@ import Notes from '../views/Notes.vue'
 import Todo from '../views/Todo.vue'
 import Dashboard from '../views/Dashboard.vue'
 import OAuthCallback from '../views/OAuthCallback.vue'
-import Bindings from '../views/Bindings.vue'
 import Profile from '../views/Profile.vue'
 
 const router = createRouter({
@@ -61,11 +60,7 @@ const router = createRouter({
     },
     {
       path: '/settings/bindings',
-      name: 'bindings',
-      meta: {
-        requireAuth: true // 账号绑定需要登录
-      },
-      component: Bindings
+      redirect: to => ({ path: '/settings/profile', query: { tab: 'bindings' } })
     },
     {
       path: '/login',

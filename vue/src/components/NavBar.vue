@@ -90,7 +90,7 @@ export default {
       if (command === 'profile') {
         this.$router.push('/settings/profile')
       } else if (command === 'bindings') {
-        this.$router.push('/settings/bindings')
+        this.$router.push('/settings/profile?tab=bindings')
       } else if (command === 'logout') {
         this.$confirm('确定退出登录吗？', '提示', {
           confirmButtonText: '退出',

@@ -1,14 +1,32 @@
 package com.example.backend.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.dto.TodoDTO;
 import com.example.backend.entity.Todo;
 
 import java.util.List;
+import java.util.Map;
 
 public interface TodoService {
 
     /** 查询当前用户所有未删除待办，置顶优先 */
     List<TodoDTO> listByUsername(String username);
+
+    /**
+     * 分页查询当前用户待办。
+     *
+     * @param status         pending 未完成 / done 已完成 / 不传或 all 全部
+     * @param keyword        标题/正文关键字
+     * @param excludeLabels  需隐藏的标签（多选）
+     */
+    Page<TodoDTO> pageTodos(String username, long pageNum, long pageSize,
+                           String status, String keyword, List<String> excludeLabels);
+
+    /** 统计当前用户各标签下的待办数量（全量，供标签筛选面板） */
+    List<Map<String, Object>> listLabelStats(String username);
+
+    /** 基于当前用户全部待办标题与正文生成词云（2-gram 词频，标题/标签加权） */
+    List<Map<String, Object>> wordCloud(String username, int limit);
 
     /** 查看待办详情（仅能查看属于当前用户的待办） */
     TodoDTO getTodo(String username, Long id);

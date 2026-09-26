@@ -1,5 +1,6 @@
 package com.example.backend.controller;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.common.Result;
 import com.example.backend.dto.NoteDTO;
 import com.example.backend.entity.Note;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
@@ -39,6 +41,37 @@ public class NoteController {
     @GetMapping
     public Result<Map<String, List<Note>>> list(HttpServletRequest request) {
         return Result.success(noteService.listMyNotes(currentUsername(request)));
+    }
+
+    /**
+     * 分页查询笔记（置顶优先）。
+     *
+     * @param pageNum     页码，默认 1
+     * @param pageSize    每页条数，默认 9
+     * @param keyword     标题/正文关键字
+     * @param excludeTag  需隐藏的标签（可多选：excludeTag=学习&excludeTag=生活）
+     */
+    @GetMapping("/page")
+    public Result<Page<Note>> page(@RequestParam(defaultValue = "1") long pageNum,
+                                   @RequestParam(defaultValue = "9") long pageSize,
+                                   @RequestParam(required = false) String keyword,
+                                   @RequestParam(value = "excludeTag", required = false) List<String> excludeTag,
+                                   HttpServletRequest request) {
+        return Result.success(noteService.pageMyNotes(
+                currentUsername(request), pageNum, pageSize, keyword, excludeTag));
+    }
+
+    /** 统计当前用户各标签下的笔记数量（供标签筛选面板） */
+    @GetMapping("/tags")
+    public Result<List<Map<String, Object>>> tagStats(HttpServletRequest request) {
+        return Result.success(noteService.listTagStats(currentUsername(request)));
+    }
+
+    /** 生成当前用户全部笔记的词云数据 */
+    @GetMapping("/wordcloud")
+    public Result<List<Map<String, Object>>> wordCloud(@RequestParam(defaultValue = "50") int limit,
+                                                       HttpServletRequest request) {
+        return Result.success(noteService.wordCloud(currentUsername(request), limit));
     }
 
     /** 查看笔记详情 */

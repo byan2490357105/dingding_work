@@ -39,6 +39,40 @@ public class TodoController {
         return Result.success(todoService.listByUsername(username));
     }
 
+    /**
+     * 分页查询待办（日历/时间轴视图仍使用 /list 全量接口）。
+     *
+     * @param status        pending 未完成 / done 已完成 / all 全部
+     * @param keyword       标题/正文关键字
+     * @param excludeLabel  需隐藏的标签（可多选）
+     */
+    @GetMapping("/page")
+    public Result<com.baomidou.mybatisplus.extension.plugins.pagination.Page<TodoDTO>> page(
+            @RequestAttribute("username") String username,
+            @RequestParam(defaultValue = "1") long pageNum,
+            @RequestParam(defaultValue = "8") long pageSize,
+            @RequestParam(defaultValue = "all") String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(value = "excludeLabel", required = false) List<String> excludeLabel) {
+        return Result.success(todoService.pageTodos(
+                username, pageNum, pageSize, status, keyword, excludeLabel));
+    }
+
+    /** 统计当前用户各标签下的待办数量（供标签筛选面板） */
+    @GetMapping("/labels")
+    public Result<List<java.util.Map<String, Object>>> labelStats(
+            @RequestAttribute("username") String username) {
+        return Result.success(todoService.listLabelStats(username));
+    }
+
+    /** 生成当前用户全部待办的词云数据 */
+    @GetMapping("/wordcloud")
+    public Result<List<java.util.Map<String, Object>>> wordCloud(
+            @RequestAttribute("username") String username,
+            @RequestParam(defaultValue = "50") int limit) {
+        return Result.success(todoService.wordCloud(username, limit));
+    }
+
     /** 查看待办详情 */
     @GetMapping("/{id}")
     public Result<TodoDTO> detail(@RequestAttribute("username") String username,
