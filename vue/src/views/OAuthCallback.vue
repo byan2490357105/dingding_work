@@ -16,6 +16,7 @@
 
 <script>
 import { mapActions } from 'vuex'
+import { thirdPartyApi } from '../api/user'
 
 export default {
   name: 'OAuthCallback',
@@ -49,17 +50,16 @@ export default {
         return
       }
       try {
-        const res = await this.$http.post('/api/third-party/exchange', { ticket: query.ticket })
-        if (res.data.code === 200 && res.data.data) {
-          this.userLogin(res.data.data)
+        const data = await thirdPartyApi.exchange(query.ticket)
+        if (data) {
+          this.userLogin(data)
           this.finish('success', '登录成功', '正在进入工作台...')
           setTimeout(() => this.$router.replace('/'), 800)
         } else {
-          this.finish('error', '登录失败', res.data.message || '票据校验失败')
+          this.finish('error', '登录失败', '票据校验失败')
         }
       } catch (err) {
-        const message = (err.response && err.response.data && err.response.data.message) || err.message
-        this.finish('error', '登录失败', message)
+        this.finish('error', '登录失败', err.message || '票据校验失败')
       }
     },
     finish(icon, title, detail) {

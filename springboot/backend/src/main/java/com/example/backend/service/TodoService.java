@@ -4,13 +4,30 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.dto.TodoDTO;
 import com.example.backend.entity.Todo;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
 public interface TodoService {
 
-    /** 查询当前用户所有未删除待办，置顶优先 */
-    List<TodoDTO> listByUsername(String username);
+    /**
+     * 轻量计数接口：返回 pending / done / trash / total，供 Tab 角标使用，
+     * 避免为拿几个数字而把全量待办拉到前端。
+     */
+    Map<String, Object> counts(String username);
+
+    /**
+     * 轻量区间查询：只取需要的数据，供日历 / 时间轴视图使用，替代原来的全量 /list。
+     *
+     * @param startDate 区间起始日期（含），与 endDate 同时为空时表示「不限时间」
+     * @param endDate   区间结束日期（含）
+     * @param overlap   false=按开始时间落在区间内筛选（日历视图）；
+     *                  true =按「与区间有交集」筛选（结束时间晚于区间起点且开始时间早于区间终点，时间轴视图）
+     * @param completed 完成状态过滤，null 表示不过滤
+     * @param limit     最大返回条数（1~1000），用于兜底防止不限时间时数据量失控
+     */
+    List<TodoDTO> listByRange(String username, LocalDate startDate, LocalDate endDate,
+                              boolean overlap, Boolean completed, int limit);
 
     /**
      * 分页查询当前用户待办。

@@ -114,7 +114,7 @@ public class ThirdPartyAuthServiceImpl implements ThirdPartyAuthService {
         }
         User user = userService.getById(userId);
         if (user == null) {
-            throw new BusinessException(401, "用户不存在");
+            throw new BusinessException(400, "用户不存在");
         }
         UserDTO userDTO = new UserDTO();
         userDTO.setUsername(user.getUsername());
@@ -207,7 +207,7 @@ public class ThirdPartyAuthServiceImpl implements ThirdPartyAuthService {
     private User requireUser(String username) {
         User user = userService.getByUsername(username);
         if (user == null) {
-            throw new BusinessException(401, "登录用户不存在");
+            throw new BusinessException(400, "登录用户不存在");
         }
         return user;
     }
@@ -215,7 +215,7 @@ public class ThirdPartyAuthServiceImpl implements ThirdPartyAuthService {
     private User requireUserById(Long userId) {
         User user = userService.getById(userId);
         if (user == null) {
-            throw new BusinessException(401, "绑定的本站用户不存在");
+            throw new BusinessException(400, "绑定的本站用户不存在");
         }
         return user;
     }

@@ -8,12 +8,17 @@
     </template>
 
     <el-alert
-      title="绑定第三方账号后，可以直接使用第三方平台登录，并且可以操作该平台的文档/表格。"
+      title="绑定第三方账号后，可直接使用该账号快捷登录随手工作台。"
       type="info"
       :closable="false"
       show-icon
       class="tip"
-    ></el-alert>
+    >
+      <template #default>
+        当前仅提供「第三方快捷登录」能力：授权时只获取你的昵称与手机号用于账号匹配，
+        不会读取、同步或修改第三方平台的任何文档、表格与联系人数据。可随时在本页解绑。
+      </template>
+    </el-alert>
 
     <div class="bind-actions">
       <el-button
@@ -48,6 +53,9 @@
 </template>
 
 <script>
+import { thirdPartyApi } from '../../api/user'
+import { notifyError } from '../../utils/notify'
+
 export default {
   name: 'BindingsCard',
   data() {
@@ -69,10 +77,7 @@ export default {
   methods: {
     async loadProviders() {
       try {
-        const res = await this.$http.get('/api/third-party/providers')
-        if (res.data.code === 200) {
-          this.providers = res.data.data || []
-        }
+        this.providers = (await thirdPartyApi.providers()) || []
       } catch (err) {
         // 忽略
       }
@@ -80,14 +85,9 @@ export default {
     async loadBindings() {
       this.loading = true
       try {
-        const res = await this.$http.get('/api/third-party/bindings')
-        if (res.data.code === 200) {
-          this.bindings = res.data.data || []
-        } else {
-          this.$message.error(res.data.message || '加载绑定信息失败')
-        }
+        this.bindings = (await thirdPartyApi.bindings()) || []
       } catch (err) {
-        this.handleError(err)
+        notifyError(err, '加载绑定信息失败')
       } finally {
         this.loading = false
       }
@@ -101,14 +101,14 @@ export default {
     },
     async bind(provider) {
       try {
-        const res = await this.$http.get(`/api/third-party/${provider}/bind-url`)
-        if (res.data.code === 200 && res.data.data) {
-          window.location.href = res.data.data
+        const url = await thirdPartyApi.bindUrl(provider)
+        if (url) {
+          window.location.href = url
         } else {
-          this.$message.error(res.data.message || '发起绑定失败')
+          this.$message.error('发起绑定失败')
         }
       } catch (err) {
-        this.handleError(err)
+        notifyError(err, '发起绑定失败')
       }
     },
     unbind(provider) {
@@ -119,23 +119,14 @@ export default {
       })
         .then(async () => {
           try {
-            const res = await this.$http.delete(`/api/third-party/bindings/${provider}`)
-            if (res.data.code === 200) {
-              this.$message.success('解绑成功')
-              this.loadBindings()
-            } else {
-              this.$message.error(res.data.message || '解绑失败')
-            }
+            await thirdPartyApi.unbind(provider)
+            this.$message.success('解绑成功')
+            this.loadBindings()
           } catch (err) {
-            this.handleError(err)
+            notifyError(err, '解绑失败')
           }
         })
         .catch(() => {})
-    },
-    handleError(err) {
-      if (!err.response || err.response.status !== 401) {
-        this.$message.error((err.response && err.response.data && err.response.data.message) || err.message)
-      }
     }
   }
 }

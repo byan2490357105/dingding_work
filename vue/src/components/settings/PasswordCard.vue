@@ -33,6 +33,7 @@
 
 <script>
 import { Lock } from '@element-plus/icons-vue'
+import { profileApi } from '../../api/user'
 
 export default {
   name: 'PasswordCard',
@@ -68,18 +69,14 @@ export default {
         if (!valid) return
         this.savingPassword = true
         try {
-          const res = await this.$http.put('/api/profile/password', {
+          await profileApi.updatePassword({
             oldPassword: this.passwordForm.oldPassword,
             newPassword: this.passwordForm.newPassword
           })
-          if (res.data.code === 200) {
-            this.$message.success('密码修改成功')
-            this.resetPasswordForm()
-          } else {
-            this.$message.error(res.data.message || '修改失败')
-          }
+          this.$message.success('密码修改成功')
+          this.resetPasswordForm()
         } catch (err) {
-          this.$message.error((err.response && err.response.data && err.response.data.message) || '修改失败')
+          this.$message.error(err.message || '修改失败')
         } finally {
           this.savingPassword = false
         }

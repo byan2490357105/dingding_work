@@ -112,9 +112,11 @@ export default {
 <style scoped>
 .navbar {
   width: 100%;
-  background: #fff;
-  border-bottom: 1px solid #e6e6e6;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--wb-border);
+  box-shadow: 0 2px 12px rgba(46, 68, 120, 0.06);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -130,19 +132,28 @@ export default {
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   cursor: pointer;
   margin-right: 24px;
+  user-select: none;
 }
 .brand-icon {
-  font-size: 24px;
-  color: var(--el-color-primary);
+  font-size: 22px;
+  color: #fff;
+  background: var(--wb-gradient-brand);
+  border-radius: 8px;
+  padding: 5px;
+  box-shadow: 0 4px 10px rgba(76, 132, 255, 0.35);
 }
 .brand-text {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
-  color: #303133;
+  background: var(--wb-gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
   white-space: nowrap;
+  letter-spacing: 0.5px;
 }
 .nav-menu {
   flex: 1;
@@ -166,7 +177,7 @@ export default {
   background: var(--el-fill-color-light);
 }
 .user-avatar {
-  background: var(--el-color-primary);
+  background: var(--wb-gradient-brand);
   color: #fff;
   font-weight: 600;
   flex-shrink: 0;

@@ -36,14 +36,6 @@ public interface NoteService {
     List<Map<String, Object>> wordCloud(String username, int limit);
 
     /**
-     * 查询当前登录用户的所有笔记，按置顶 / 未置顶分为两个列表。
-     *
-     * @param username 当前登录用户名（由 JWT 解析得到）
-     * @return {"pinned": 置顶列表, "normal": 未置顶列表}
-     */
-    Map<String, List<Note>> listMyNotes(String username);
-
-    /**
      * 查看笔记详情（仅能查看属于当前登录用户的笔记）。
      */
     Note getNote(String username, Long noteId);

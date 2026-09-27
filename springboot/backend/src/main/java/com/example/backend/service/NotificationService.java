@@ -3,8 +3,6 @@ package com.example.backend.service;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.backend.entity.Notification;
 
-import java.util.List;
-
 /**
  * 站内消息服务。
  */

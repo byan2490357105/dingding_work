@@ -25,7 +25,7 @@
         <div class="item-header">
           <span class="type-icon">{{ typeIcon(item.type) }}</span>
           <span class="item-title">{{ item.title }}</span>
-          <span class="item-time">{{ formatTime(item.createdAt) }}</span>
+          <span class="item-time">{{ formatMinute(item.createdAt) }}</span>
           <span v-if="!item.isRead" class="unread-dot"></span>
         </div>
         <div v-if="expandedId === item.id" class="item-content" v-html="item.content"></div>
@@ -48,6 +48,8 @@
 
 <script>
 import { Bell } from '@element-plus/icons-vue'
+import { notificationApi } from '../../api/user'
+import { formatMinute } from '../../utils/date'
 
 export default {
   name: 'NotificationCard',
@@ -71,14 +73,9 @@ export default {
     async loadList() {
       this.loading = true
       try {
-        const res = await this.$http.get('/api/notifications', {
-          params: { pageNum: this.pageNum, pageSize: this.pageSize }
-        })
-        if (res.data.code === 200) {
-          const data = res.data.data
-          this.list = data.records || []
-          this.total = data.total || 0
-        }
+        const data = await notificationApi.page(this.pageNum, this.pageSize)
+        this.list = data.records || []
+        this.total = data.total || 0
       } catch (err) {
         // 静默
       } finally {
@@ -87,10 +84,8 @@ export default {
     },
     async loadUnreadCount() {
       try {
-        const res = await this.$http.get('/api/notifications/unread-count')
-        if (res.data.code === 200) {
-          this.unreadCount = res.data.data.count || 0
-        }
+        const data = await notificationApi.unreadCount()
+        this.unreadCount = data.count || 0
       } catch (err) {
         // 静默
       }
@@ -104,7 +99,7 @@ export default {
       // 自动标记已读
       if (!item.isRead) {
         try {
-          await this.$http.put(`/api/notifications/${item.id}/read`)
+          await notificationApi.markRead(item.id)
           item.isRead = true
           this.unreadCount = Math.max(0, this.unreadCount - 1)
         } catch (err) {
@@ -114,12 +109,12 @@ export default {
     },
     async markAllRead() {
       try {
-        await this.$http.put('/api/notifications/read-all')
+        await notificationApi.markAllRead()
         this.list.forEach(item => { item.isRead = true })
         this.unreadCount = 0
         this.$message.success('已全部标记为已读')
       } catch (err) {
-        this.$message.error('操作失败')
+        this.$message.error(err.message || '操作失败')
       }
     },
     onPageChange(page) {
@@ -135,10 +130,7 @@ export default {
       }
       return map[type] || '📢'
     },
-    formatTime(time) {
-      if (!time) return ''
-      return time.replace('T', ' ').substring(0, 16)
-    }
+    formatMinute
   }
 }
 </script>

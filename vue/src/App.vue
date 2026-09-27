@@ -3,7 +3,11 @@
     <!-- 全局独立导航/个人中心：路由跳转时始终显示，登录、注册页隐藏 -->
     <nav-bar v-if="!isAuthPage"></nav-bar>
     <main class="app-main">
-      <router-view></router-view>
+      <router-view v-slot="{ Component }">
+        <transition name="route-fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
     </main>
   </div>
 </template>
@@ -25,27 +29,21 @@ export default {
 
 <style>
 #app {
-  font-family: 'Avenir', Helvetica, Arial, sans-serif;
+  font-family: var(--wb-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #2c3e50;
+  color: var(--wb-text-primary);
   min-height: 100vh;
 }
 .app-main {
   min-height: calc(100vh - 60px);
 }
-h1, h2 {
-  font-weight: normal;
-}
 ul {
   list-style-type: none;
   padding: 0;
 }
-li {
-  margin: 10px;
-}
 a {
-  color: #42b983;
+  color: var(--wb-primary);
   text-decoration: none;
 }
 </style>

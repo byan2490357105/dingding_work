@@ -14,6 +14,7 @@ import com.example.backend.util.ExportUtil;
 import com.example.backend.util.WordFreqUtil;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -35,16 +36,67 @@ public class TodoServiceImpl implements TodoService {
     }
 
     @Override
-    public List<TodoDTO> listByUsername(String username) {
+    public Map<String, Object> counts(String username) {
         Long userId = requireUserId(username);
-        LambdaQueryWrapper<Todo> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Todo::getUserId, userId)
-                .eq(Todo::getDeleted, false)
-                .orderByDesc(Todo::getTop)
-                .orderByDesc(Todo::getUpdatedAt);
-        return todoMapper.selectList(queryWrapper).stream()
+        long done = countByCompleted(userId, true);
+        long pending = countByCompleted(userId, false);
+        Map<String, Object> counts = new LinkedHashMap<>(4);
+        counts.put("pending", pending);
+        counts.put("done", done);
+        counts.put("total", pending + done);
+        counts.put("trash", todoMapper.selectCount(new LambdaQueryWrapper<Todo>()
+                .eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, true)));
+        return counts;
+    }
+
+    @Override
+    public List<TodoDTO> listByRange(String username, LocalDate startDate, LocalDate endDate,
+                                     boolean overlap, Boolean completed, int limit) {
+        Long userId = requireUserId(username);
+        LambdaQueryWrapper<Todo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false);
+        if (completed != null) {
+            wrapper.eq(Todo::getCompleted, completed);
+        }
+        if (startDate != null || endDate != null) {
+            if (startDate == null || endDate == null) {
+                throw new BusinessException("起止日期需同时提供");
+            }
+            LocalDateTime start = startDate.atStartOfDay();
+            // 结束日期含当天，因此上界取次日的 0 点（左闭右开）
+            LocalDateTime end = endDate.plusDays(1).atStartOfDay();
+            if (!end.isAfter(start)) {
+                throw new BusinessException("结束日期不能早于开始日期");
+            }
+            if (overlap) {
+                // 与区间有交集：任务结束晚于区间起点 且 任务开始早于区间终点
+                wrapper.gt(Todo::getEndTime, start)
+                        .lt(Todo::getStartTime, end);
+            } else {
+                // 开始时间落在区间内
+                wrapper.ge(Todo::getStartTime, start)
+                        .lt(Todo::getStartTime, end);
+            }
+        }
+        wrapper.orderByAsc(Todo::getStartTime)
+                .orderByDesc(Todo::getTop);
+        // 兜底上限：防止「不限时间」时把历史全量数据拉到前端
+        int safeLimit = Math.max(1, Math.min(limit <= 0 ? 500 : limit, 1000));
+        wrapper.last("LIMIT " + safeLimit);
+        return todoMapper.selectList(wrapper).stream()
                 .map(this::toDTO)
                 .collect(Collectors.toList());
+    }
+
+    /** 按完成状态统计未删除待办数量（COUNT 查询，不加载实体） */
+    private long countByCompleted(Long userId, boolean completed) {
+        Long count = todoMapper.selectCount(new LambdaQueryWrapper<Todo>()
+                .eq(Todo::getUserId, userId)
+                .eq(Todo::getDeleted, false)
+                .eq(Todo::getCompleted, completed));
+        return count == null ? 0L : count;
     }
 
     @Override

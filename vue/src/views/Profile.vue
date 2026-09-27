@@ -65,12 +65,21 @@ export default {
   },
   created() {
     // 从路由 query 初始化激活的 tab（支持 URL 分享/刷新回显）
-    const tab = this.$route.query.tab
-    if (tab && VALID_TABS.includes(tab)) {
-      this.activeTab = tab
+    this.syncTabFromRoute(this.$route.query.tab)
+  },
+  watch: {
+    // 关键修复：已在设置页时再次跳转（如从个人信息点「账号绑定」）不会重建组件，
+    // 必须监听 query.tab 变化才能切换右侧内容
+    '$route.query.tab'(tab) {
+      this.syncTabFromRoute(tab)
     }
   },
   methods: {
+    syncTabFromRoute(tab) {
+      if (tab && VALID_TABS.includes(tab) && tab !== this.activeTab) {
+        this.activeTab = tab
+      }
+    },
     onMenuSelect(index) {
       this.activeTab = index
       // 同步到路由 query（replace 避免历史栈堆积）

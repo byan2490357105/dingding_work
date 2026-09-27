@@ -37,7 +37,9 @@ public class AuthServiceImpl implements AuthService {
 
         User user = userService.loginByUsernameAndPassword(username, password);
         if (user == null) {
-            throw new BusinessException(401, "用户名或密码错误");
+            // 登录失败属于业务校验错误（400），不是会话失效（401）。
+            // 401 只保留给「Token 无效/过期」，前端拦截器据此判断是否跳登录页。
+            throw new BusinessException(400, "用户名或密码错误");
         }
         return buildLoginResult(user);
     }

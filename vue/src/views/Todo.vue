@@ -3,15 +3,16 @@
     <h2 class="page-heading">待办任务</h2>
 
     <div class="page-toolbar">
-      <div>
+      <div class="toolbar-left">
         <el-input
           v-model="searchKeyword"
           placeholder="按标题/关键字搜索待办"
           clearable
           style="width: 200px"
-          :prefix-icon="Search"
-        />
-        <el-button @click="openWordCloud">
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <el-button @click="wordCloudVisible = true">
           <el-icon><Histogram /></el-icon>&nbsp;词云
         </el-button>
         <el-button type="primary" @click="openCreate">新建待办</el-button>
@@ -21,14 +22,16 @@
         <el-button :type="viewMode === 'timeline' ? 'primary' : 'default'" plain @click="toggleTimelineView">
           <el-icon><AlarmClock /></el-icon>&nbsp;{{ viewMode === 'timeline' ? '切换列表模式' : '时间轴模式' }}
         </el-button>
-        <el-button :loading="loading" @click="reloadAfterChange">刷新</el-button>
+        <el-button :loading="loading" @click="reloadAfterChange">
+          <el-icon><Refresh /></el-icon>&nbsp;刷新
+        </el-button>
         <el-button type="success" plain :loading="exporting" @click="exportCsv">
           <el-icon><Download /></el-icon>&nbsp;导出待办
         </el-button>
-        <el-button type="warning" :loading="generatingReport" @click="generateTodoReport">
+        <el-button type="warning" @click="$refs.reportPanel.open('monthly')">
           <el-icon><MagicStick /></el-icon>&nbsp;AI 月报
         </el-button>
-        <el-button type="warning" plain :loading="generatingReport" @click="generateTodoWeeklyReport">
+        <el-button type="warning" plain @click="$refs.reportPanel.open('weekly')">
           <el-icon><MagicStick /></el-icon>&nbsp;AI 周报
         </el-button>
       </div>
@@ -36,57 +39,13 @@
     </div>
 
     <!-- 标签筛选面板（可折叠，仅列表视图显示） -->
-    <div class="tag-filter-panel" v-if="viewMode === 'list' && allLabels.length > 0">
-      <div class="tag-filter-head" @click="tagPanelCollapsed = !tagPanelCollapsed">
-        <el-icon class="collapse-arrow" :class="{ collapsed: tagPanelCollapsed }"><ArrowDown /></el-icon>
-        <span class="tag-filter-title">按标签筛选（勾选显示，取消勾选则隐藏该标签的待办）</span>
-        <el-tag size="small" type="info">{{ selectedLabels.length }}/{{ allLabels.length }} 个标签</el-tag>
-      </div>
-      <div class="tag-filter-body" v-show="!tagPanelCollapsed">
-        <div class="tag-filter-toolbar">
-          <el-input
-            v-model="labelSearchKey"
-            placeholder="搜索标签"
-            size="small"
-            clearable
-            :prefix-icon="Search"
-            style="width: 200px"
-          />
-          <el-button size="small" link @click="selectedLabels = allLabels.slice()">全选</el-button>
-          <el-button size="small" link @click="selectedLabels = []">全不选</el-button>
-        </div>
-        <div class="tag-carousel">
-          <el-button
-            v-if="totalLabelPages > 1"
-            link
-            :disabled="labelPage === 0"
-            class="tag-nav-btn"
-            @click="prevLabelPage"
-          >
-            <el-icon><ArrowLeft /></el-icon>
-          </el-button>
-          <transition :name="labelSlideDir === 'next' ? 'tag-slide-next' : 'tag-slide-prev'" mode="out-in">
-            <div :key="labelPage" class="tag-page">
-              <el-checkbox-group v-model="selectedLabels" class="tag-checkbox-row">
-                <el-checkbox v-for="lab in pagedLabels" :key="lab" :label="lab" class="tag-checkbox-item">
-                  <el-tag size="small" effect="plain">{{ lab }}</el-tag>
-                  <span class="tag-count">{{ labelCount(lab) }}</span>
-                </el-checkbox>
-              </el-checkbox-group>
-            </div>
-          </transition>
-          <el-button
-            v-if="totalLabelPages > 1"
-            link
-            :disabled="labelPage >= totalLabelPages - 1"
-            class="tag-nav-btn"
-            @click="nextLabelPage"
-          >
-            <el-icon><ArrowRight /></el-icon>
-          </el-button>
-        </div>
-      </div>
-    </div>
+    <tag-filter-panel
+      v-model="selectedLabels"
+      v-model:collapsed="tagPanelCollapsed"
+      :stats="labelStats"
+      :visible="viewMode === 'list'"
+      hint="按标签筛选（勾选显示，取消勾选则隐藏该标签的待办）"
+    />
 
     <el-tabs v-if="viewMode === 'list'" v-model="activeTab" class="todo-tabs" @tab-change="onTabChange">
       <el-tab-pane label="我的待办" name="todos">
@@ -94,50 +53,16 @@
           <!-- 置顶待办（当前页内，置顶排序在最前） -->
           <section class="todo-group" v-if="pendingTopRecords.length > 0">
             <div class="group-title">置顶待办（{{ pendingTopRecords.length }}）</div>
-            <el-card
+            <todo-card
               v-for="todo in pendingTopRecords"
               :key="todo.id"
-              shadow="hover"
-              class="todo-card"
-              :class="{ 'todo-overdue': todo.status === '逾期' }"
-            >
-              <template #header>
-                <div class="todo-header">
-                  <div class="todo-title">
-                    <el-checkbox
-                      :model-value="todo.completed"
-                      title="标记完成 / 取消完成"
-                      @change="toggleComplete(todo)"
-                    />
-                    <el-tag type="warning" size="small">置顶</el-tag>
-                    <el-tag v-if="todo.daily" type="success" size="small">每日</el-tag>
-                    <el-tag :type="statusType(todo.status)" size="small" effect="dark">{{ todo.status }}</el-tag>
-                    <span class="todo-title-text">{{ todo.title }}</span>
-                  </div>
-                  <div class="todo-actions">
-                    <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
-                    <el-button link type="primary" @click="openDetail(todo)">详情</el-button>
-                    <el-button link type="success" @click="toggleComplete(todo)">标记完成</el-button>
-                    <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
-                    <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
-                  </div>
-                </div>
-              </template>
-              <div class="todo-time">
-                <span>开始：{{ formatTime(todo.startTime) }}</span>
-                <span>结束：{{ formatTime(todo.endTime) }}</span>
-                <span v-if="todo.remindTime" class="remind-tip">
-                  <el-icon><AlarmClock /></el-icon>提醒：{{ formatTime(todo.remindTime) }}
-                  <el-tag v-if="todo.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
-                </span>
-                <span v-if="todo.daily && todo.repeatUntil" class="repeat-tip">每日重复至 {{ todo.repeatUntil }}</span>
-                <span v-else-if="todo.daily" class="repeat-tip">每天重复，长期有效</span>
-              </div>
-              <div v-if="todo.content" class="todo-content" v-html="todo.content"></div>
-              <div class="todo-meta">
-                创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
-              </div>
-            </el-card>
+              :todo="todo"
+              pinned
+              @detail="openDetail"
+              @toggle="toggleComplete"
+              @edit="openEdit"
+              @remove="removeTodo"
+            />
           </section>
 
           <!-- 未置顶的进行中待办（当前页内） -->
@@ -145,52 +70,18 @@
             <div class="group-title">进行中的待办（{{ pendingNormalRecords.length }}）</div>
             <el-empty
               v-if="pendingNormalRecords.length === 0 && pendingTopRecords.length === 0"
-              :description="searchKeyword || selectedLabels.length < allLabels.length ? '没有符合条件的待办' : '暂无待办，点击右上角新建'"
+              :description="emptyDescription"
               :image-size="70"
-            ></el-empty>
-            <el-card
+            />
+            <todo-card
               v-for="todo in pendingNormalRecords"
               :key="todo.id"
-              shadow="hover"
-              class="todo-card"
-              :class="{ 'todo-overdue': todo.status === '逾期' }"
-            >
-              <template #header>
-                <div class="todo-header">
-                  <div class="todo-title">
-                    <el-checkbox
-                      :model-value="todo.completed"
-                      title="标记完成 / 取消完成"
-                      @change="toggleComplete(todo)"
-                    />
-                    <el-tag v-if="todo.daily" type="success" size="small">每日</el-tag>
-                    <el-tag :type="statusType(todo.status)" size="small" effect="dark">{{ todo.status }}</el-tag>
-                    <span class="todo-title-text">{{ todo.title }}</span>
-                  </div>
-                  <div class="todo-actions">
-                    <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
-                    <el-button link type="primary" @click="openDetail(todo)">详情</el-button>
-                    <el-button link type="success" @click="toggleComplete(todo)">标记完成</el-button>
-                    <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
-                    <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
-                  </div>
-                </div>
-              </template>
-              <div class="todo-time">
-                <span>开始：{{ formatTime(todo.startTime) }}</span>
-                <span>结束：{{ formatTime(todo.endTime) }}</span>
-                <span v-if="todo.remindTime" class="remind-tip">
-                  <el-icon><AlarmClock /></el-icon>提醒：{{ formatTime(todo.remindTime) }}
-                  <el-tag v-if="todo.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
-                </span>
-                <span v-if="todo.daily && todo.repeatUntil" class="repeat-tip">每日重复至 {{ todo.repeatUntil }}</span>
-                <span v-else-if="todo.daily" class="repeat-tip">每天重复，长期有效</span>
-              </div>
-              <div v-if="todo.content" class="todo-content" v-html="todo.content"></div>
-              <div class="todo-meta">
-                创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
-              </div>
-            </el-card>
+              :todo="todo"
+              @detail="openDetail"
+              @toggle="toggleComplete"
+              @edit="openEdit"
+              @remove="removeTodo"
+            />
           </section>
 
           <!-- 分页（进行中） -->
@@ -209,46 +100,21 @@
         </div>
       </el-tab-pane>
 
-      <!-- 已完成待办（独立分页） -->
-      <el-tab-pane :label="`已完成(${completedTotal})`" name="done">
+      <!-- 已完成待办（独立分页，首次进入时才加载） -->
+      <el-tab-pane :label="`已完成(${counts.done})`" name="done">
         <div v-loading="loading">
-          <el-empty v-if="doneRecords.length === 0" :description="searchKeyword || selectedLabels.length < allLabels.length ? '没有符合条件的已完成待办' : '暂无已完成的待办'" :image-size="70"></el-empty>
-          <el-card
+          <el-empty v-if="doneRecords.length === 0" :description="doneEmptyDescription" :image-size="70" />
+          <todo-card
             v-for="todo in doneRecords"
             :key="todo.id"
-            shadow="hover"
-            class="todo-card todo-done"
-          >
-            <template #header>
-              <div class="todo-header">
-                <div class="todo-title">
-                  <el-checkbox
-                    :model-value="todo.completed"
-                    title="取消完成"
-                    @change="toggleComplete(todo)"
-                  />
-                  <el-tag v-if="todo.top" type="warning" size="small">置顶</el-tag>
-                  <el-tag type="success" size="small" effect="dark">已完成</el-tag>
-                  <span class="todo-title-text done-title">{{ todo.title }}</span>
-                </div>
-                <div class="todo-actions">
-                  <el-tag v-if="todo.label" type="primary" effect="plain" size="small">{{ todo.label }}</el-tag>
-                  <el-button link type="warning" @click="toggleComplete(todo)">取消完成</el-button>
-                  <el-button link type="primary" @click="openEdit(todo)">编辑</el-button>
-                  <el-button link type="danger" @click="removeTodo(todo)">删除</el-button>
-                </div>
-              </div>
-            </template>
-            <div class="todo-time">
-              <span>开始：{{ formatTime(todo.startTime) }}</span>
-              <span>结束：{{ formatTime(todo.endTime) }}</span>
-            </div>
-            <div class="todo-meta">
-              创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
-            </div>
-          </el-card>
+            :todo="todo"
+            done
+            @detail="openDetail"
+            @toggle="toggleComplete"
+            @edit="openEdit"
+            @remove="removeTodo"
+          />
 
-          <!-- 分页（已完成） -->
           <div class="pagination-bar" v-if="doneTotal > 0">
             <el-pagination
               background
@@ -264,191 +130,28 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`回收站(${trashTodos.length})`" name="trash">
-        <el-empty v-if="trashTodos.length === 0" description="回收站是空的" :image-size="80"></el-empty>
-        <template v-else>
-          <el-card
+      <el-tab-pane :label="`回收站(${counts.trash})`" name="trash">
+        <div v-loading="trashLoading">
+          <el-empty v-if="trashTodos.length === 0" description="回收站是空的" :image-size="80" />
+          <todo-card
             v-for="todo in trashTodos"
             :key="todo.id"
-            shadow="never"
-            class="todo-card trash-todo-card"
-          >
-            <template #header>
-              <div class="todo-header">
-                <div class="todo-title">
-                  <el-tag v-if="todo.top" type="warning" size="small">置顶</el-tag>
-                  <span class="todo-title-text">{{ todo.title }}</span>
-                </div>
-                <div class="todo-actions">
-                  <el-tag v-if="todo.label" type="info" effect="plain" size="small">{{ todo.label }}</el-tag>
-                  <el-button link type="success" @click="restoreTodo(todo)">恢复</el-button>
-                  <el-button link type="danger" @click="permanentlyDeleteTodo(todo)">彻底删除</el-button>
-                </div>
-              </div>
-            </template>
-            <div class="todo-time">
-              <span>开始：{{ formatTime(todo.startTime) }}</span>
-              <span>结束：{{ formatTime(todo.endTime) }}</span>
-            </div>
-            <div class="todo-meta">
-              创建于 {{ formatTime(todo.createdAt) }} · 修改于 {{ formatTime(todo.updatedAt) }}
-            </div>
-          </el-card>
-        </template>
+            :todo="todo"
+            trash
+            @restore="restoreTodo"
+            @permanent-remove="permanentlyDeleteTodo"
+          />
+        </div>
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 日历模式：以开始时间的日期为维度聚合展示 -->
-    <div v-else-if="viewMode === 'calendar'" v-loading="loading" class="calendar-view">
-      <div class="calendar-card">
-        <div class="calendar-toolbar">
-          <el-button circle size="large" title="上一月" @click="prevMonth">
-            <el-icon><ArrowLeft /></el-icon>
-          </el-button>
-          <div class="calendar-center">
-            <div class="calendar-title">{{ calendarYear }} 年 {{ calendarMonth + 1 }} 月</div>
-            <div class="calendar-picker-row">
-              <el-date-picker
-                v-model="calendarPicker"
-                type="month"
-                placeholder="选择年月"
-                format="YYYY 年 MM 月"
-                value-format="YYYY-MM"
-                :clearable="false"
-                size="small"
-                @change="onCalendarPickerChange"
-              />
-              <el-button link type="primary" @click="goToday">回到本月</el-button>
-            </div>
-          </div>
-          <el-button circle size="large" title="下一月" @click="nextMonth">
-            <el-icon><ArrowRight /></el-icon>
-          </el-button>
-        </div>
+    <!-- 日历模式：按展示月份向后端取该区间数据 -->
+    <todo-calendar v-else-if="viewMode === 'calendar'" ref="calendar" @detail="openDetail" />
 
-        <div class="calendar-grid">
-          <div v-for="w in weekLabels" :key="w" class="calendar-week">{{ w }}</div>
-          <div
-            v-for="cell in calendarCells"
-            :key="cell.key"
-            class="calendar-cell"
-            :class="{ 'cell-out': !cell.inMonth, 'cell-today': cell.isToday }"
-          >
-            <div class="cell-day">
-              <span class="cell-day-num" :class="{ today: cell.isToday }">{{ cell.day }}</span>
-              <span v-if="cell.isToday" class="today-badge">今天</span>
-            </div>
-            <div class="cell-todos">
-              <div
-                v-for="todo in cell.todos"
-                :key="todo.id"
-                class="cell-todo"
-                :class="'chip-' + chipClass(todo)"
-                :title="todo.title + '（' + formatTime(todo.startTime) + '）'"
-                @click="openDetail(todo)"
-              >
-                <span class="chip-time">{{ String(todo.startTime).slice(11, 16) }}</span>
-                <span class="chip-title">{{ todo.title }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+    <!-- 时间轴模式：未完成待办的时间线总览 + 时间节点（按范围向后端取数） -->
+    <todo-timeline v-else ref="timeline" @detail="openDetail" />
 
-        <div class="calendar-legend">
-          <span><span class="legend-dot" style="background: var(--el-color-primary);"></span>进行中</span>
-          <span><span class="legend-dot" style="background: var(--el-color-success);"></span>已完成</span>
-          <span><span class="legend-dot" style="background: var(--el-color-danger);"></span>逾期</span>
-          <span class="legend-tip">任务归属日期以开始时间为准 · 同一天可挂载多条任务 · 点击任务查看详情</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 时间轴模式：未完成待办的时间线总览 + 时间节点 -->
-    <div v-else v-loading="loading" class="timeline-view">
-      <el-empty v-if="timelineTodos.length === 0" description="暂无未完成的待办任务" :image-size="90"></el-empty>
-      <template v-else>
-        <!-- 甘特总览：不同事务使用不同颜色 -->
-        <div class="gantt-card">
-          <div class="view-title">
-            时间线总览
-            <span class="view-sub">共 {{ timelineTodos.length }} 个未完成事务 · 不同事务使用不同颜色</span>
-          </div>
-          <div class="gantt-wrap">
-            <div class="gantt-labels">
-              <div class="gantt-axis-spacer"></div>
-              <div
-                v-for="item in timelineTodos"
-                :key="'label-' + item.id"
-                class="gantt-label"
-                :title="item.title"
-              >
-                <span class="gantt-dot" :style="{ background: item.color }"></span>
-                <span class="gantt-label-text">{{ item.title }}</span>
-              </div>
-            </div>
-            <div class="gantt-area">
-              <div class="gantt-axis">
-                <span
-                  v-for="(tick, ti) in ganttTicks"
-                  :key="'tick-' + ti"
-                  class="gantt-tick"
-                  :style="{ left: tick.left + '%' }"
-                >{{ tick.label }}</span>
-                <span
-                  v-if="ganttTodayLeft !== null"
-                  class="gantt-today-badge"
-                  :style="{ left: ganttTodayLeft + '%' }"
-                >今天</span>
-              </div>
-              <div v-for="item in timelineTodos" :key="'bar-' + item.id" class="gantt-track">
-                <div
-                  class="gantt-bar"
-                  :style="{ left: item.left + '%', width: item.width + '%', background: item.color }"
-                  :title="item.title + '：' + formatTime(item.startTime) + ' ~ ' + formatTime(item.endTime)"
-                >
-                  <span class="gantt-bar-text">
-                    {{ formatTime(item.startTime).slice(5, 16) }} ~ {{ formatTime(item.endTime).slice(5, 16) }}
-                  </span>
-                </div>
-              </div>
-              <div
-                v-if="ganttTodayLeft !== null"
-                class="gantt-today-line"
-                :style="{ left: ganttTodayLeft + '%' }"
-              ></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 时间节点：开始 / 截止按时间先后排列 -->
-        <div class="milestone-card">
-          <div class="view-title">
-            时间节点
-            <span class="view-sub">按事件发生时间先后排列 · 点击可查看详情</span>
-          </div>
-          <el-timeline class="milestone-timeline">
-            <el-timeline-item
-              v-for="(ev, index) in milestoneEvents"
-              :key="index"
-              :color="ev.todo.color"
-              :timestamp="ev.dateText"
-              :hollow="ev.type === 'end'"
-            >
-              <div class="milestone-item" @click="openDetail(ev.todo)">
-                <span class="milestone-date">{{ ev.shortDate }}</span>
-                <el-tag size="small" :type="ev.type === 'start' ? 'success' : 'danger'" effect="dark">
-                  {{ ev.type === 'start' ? '开始' : '截止' }}
-                </el-tag>
-                <span class="milestone-title" :style="{ color: ev.todo.color }">{{ ev.todo.title }}</span>
-                <el-tag v-if="ev.todo.label" size="small" effect="plain" type="info">{{ ev.todo.label }}</el-tag>
-                <span class="milestone-time">{{ ev.timeText }}</span>
-              </div>
-            </el-timeline-item>
-          </el-timeline>
-        </div>
-      </template>
-    </div>
-
+    <!-- 新建 / 编辑 弹窗 -->
     <el-dialog
       v-model="dialogVisible"
       :title="form.id ? '编辑待办' : '新建待办'"
@@ -504,7 +207,7 @@
             type="datetime"
             value-format="YYYY-MM-DD HH:mm"
             format="YYYY-MM-DD HH:mm"
-            placeholder="留空不提醒，到达该时间将发送邮件提醒"
+            placeholder="留空不提醒，到达该时间将发送提醒"
             style="width: 100%"
           ></el-date-picker>
         </el-form-item>
@@ -580,12 +283,12 @@
 
         <el-descriptions :column="1" border size="small" class="detail-desc">
           <el-descriptions-item label="标签">{{ detail.label || '无' }}</el-descriptions-item>
-          <el-descriptions-item label="开始时间">{{ formatTime(detail.startTime) }}</el-descriptions-item>
+          <el-descriptions-item label="开始时间">{{ formatMinute(detail.startTime) }}</el-descriptions-item>
           <el-descriptions-item label="截止时间">
-            <span :class="{ 'overdue-text': detail.status === '逾期' }">{{ formatTime(detail.endTime) }}</span>
+            <span :class="{ 'overdue-text': detail.status === '逾期' }">{{ formatMinute(detail.endTime) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="提醒时间">
-            <span v-if="detail.remindTime">{{ formatTime(detail.remindTime) }}
+            <span v-if="detail.remindTime">{{ formatMinute(detail.remindTime) }}
               <el-tag v-if="detail.reminded" size="small" type="success" effect="plain">已提醒</el-tag>
               <el-tag v-else size="small" type="warning" effect="plain">待提醒</el-tag>
             </span>
@@ -598,8 +301,8 @@
             <template v-else>不重复</template>
           </el-descriptions-item>
           <el-descriptions-item label="置顶">{{ detail.top ? '是' : '否' }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatTime(detail.createdAt) }}</el-descriptions-item>
-          <el-descriptions-item label="修改时间">{{ formatTime(detail.updatedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatMinute(detail.createdAt) }}</el-descriptions-item>
+          <el-descriptions-item label="修改时间">{{ formatMinute(detail.updatedAt) }}</el-descriptions-item>
         </el-descriptions>
 
         <el-divider content-position="left">任务内容</el-divider>
@@ -619,87 +322,34 @@
       </template>
     </el-dialog>
 
-    <!-- AI 待办月报 / 周报弹窗 -->
-    <el-dialog
-      v-model="reportVisible"
-      :title="reportTitle"
-      width="720px"
-      :close-on-click-modal="false"
-    >
-      <div v-loading="generatingReport">
-        <div class="report-period">统计周期：{{ reportPeriod }}</div>
-        <div v-if="reportCached" class="report-cached-tip">（来自缓存，数据未更新）</div>
-        <div class="report-content" v-html="reportHtml"></div>
-      </div>
-      <template #footer>
-        <el-button type="primary" plain @click="openHistory">历史报告</el-button>
-        <el-button @click="reportVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- AI 报告历史抽屉 -->
-    <el-drawer
-      v-model="historyVisible"
-      title="AI 报告历史"
-      size="460px"
-      :append-to-body="true"
-    >
-      <div class="history-toolbar">
-        <el-radio-group v-model="historyType" @change="loadHistory">
-          <el-radio-button label="todo-monthly">月报</el-radio-button>
-          <el-radio-button label="todo-weekly">周报</el-radio-button>
-        </el-radio-group>
-        <el-button size="small" @click="loadHistory">刷新</el-button>
-      </div>
-      <div v-loading="historyLoading" class="history-body">
-        <el-empty v-if="historyList.length === 0" description="暂无历史报告" :image-size="60" />
-        <el-timeline v-else>
-          <el-timeline-item
-            v-for="rep in historyList"
-            :key="rep.id"
-            :timestamp="formatHistoryTime(rep.generatedAt)"
-            placement="top"
-          >
-            <el-card
-              shadow="hover"
-              class="history-card"
-              @click="showHistoryReport(rep)"
-            >
-              <div class="history-period">{{ rep.period }}</div>
-              <div class="history-type">类型：{{ reportTypeLabel(rep.reportType) }}</div>
-              <div class="history-click-tip">点击查看完整报告</div>
-            </el-card>
-          </el-timeline-item>
-        </el-timeline>
-      </div>
-    </el-drawer>
+    <!-- AI 待办月报 / 周报 + 历史报告 -->
+    <ai-report-panel ref="reportPanel" kind="todo" />
 
     <!-- 词云弹窗 -->
-    <el-dialog v-model="wordCloudVisible" title="待办词云" width="640px" top="10vh">
-      <el-empty v-if="wordCloudWords.length === 0" description="暂无待办内容生成词云" :image-size="80" />
-      <div v-else class="word-cloud">
-        <span
-          v-for="w in wordCloudWords"
-          :key="w.name"
-          class="wc-word"
-          :style="{ fontSize: wordSize(w.value, wordMax()) + 'px', color: wcColor(w.value, wordMax()) }"
-          :title="'出现 ' + w.value + ' 次'"
-        >{{ w.name }}</span>
-      </div>
-      <div class="wc-tip">基于所有待办标题与正文的高频词生成，字号越大出现频次越高</div>
-    </el-dialog>
+    <word-cloud-dialog v-model="wordCloudVisible" kind="todo" />
   </div>
 </template>
 
 <script>
 import { mapState } from 'vuex'
-import { Download, MagicStick, Calendar, AlarmClock, ArrowLeft, ArrowRight, Search, ArrowDown, Histogram } from '@element-plus/icons-vue'
+import {
+  Download, MagicStick, Calendar, AlarmClock, Refresh, Search, Histogram
+} from '@element-plus/icons-vue'
 import RichEditor from '../components/RichEditor.vue'
-import { renderMarkdown } from '../utils/markdown'
+import TodoCard from '../components/TodoCard.vue'
+import TagFilterPanel from '../components/TagFilterPanel.vue'
+import TodoCalendar from '../components/TodoCalendar.vue'
+import TodoTimeline from '../components/TodoTimeline.vue'
+import AiReportPanel from '../components/AiReportPanel.vue'
+import WordCloudDialog from '../components/WordCloudDialog.vue'
+import { todoApi } from '../api/todo'
+import { aiApi } from '../api/ai'
+import { formatMinute, parseLocal } from '../utils/date'
+import { downloadBlob } from '../utils/download'
+import { debounce } from '../composables/useSearchDebounce'
+import { notifyError } from '../utils/notify'
 
 const DEFAULT_TAGS = ['学习', '生活', '科研', '出行']
-// 时间轴模式：不同事务的绘制颜色（循环取用）
-const TIMELINE_COLORS = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#9254DE', '#13C2C2', '#EB2F96', '#FAAD14', '#2F54EB', '#7CB305']
 
 function defaultForm() {
   return {
@@ -716,6 +366,10 @@ function defaultForm() {
   }
 }
 
+/** 拉取标签统计并归一化为 [{ name, count }] */
+const loadLabelStats = async () =>
+  ((await todoApi.labelStats()) || []).map(item => ({ name: item.label, count: item.count }))
+
 export default {
   name: 'TodoPage',
   components: {
@@ -723,19 +377,22 @@ export default {
     MagicStick,
     Calendar,
     AlarmClock,
-    ArrowLeft,
-    ArrowRight,
+    Refresh,
     Search,
-    ArrowDown,
     Histogram,
-    RichEditor
+    RichEditor,
+    TodoCard,
+    TagFilterPanel,
+    TodoCalendar,
+    TodoTimeline,
+    AiReportPanel,
+    WordCloudDialog
   },
   data() {
     return {
-      // todos 为全量数据，供日历/时间轴视图使用；列表视图走后端分页
-      todos: [],
-      trashTodos: [],
       activeTab: 'todos',
+      // 轻量计数（Tab 角标），不再为拿数字加载全量待办
+      counts: { pending: 0, done: 0, total: 0, trash: 0 },
       // 列表分页（进行中 / 已完成各自独立分页）
       pendingRecords: [],
       pendingTotal: 0,
@@ -745,42 +402,27 @@ export default {
       donePageNum: 1,
       doneLoaded: false,
       pageSize: 8,
-      // 全量标签统计 [{label,count}]
+      // 回收站（首次进入该 Tab 时才加载）
+      trashTodos: [],
+      trashLoading: false,
+      trashLoaded: false,
+      // 全量标签统计 [{ name, count }]
       labelStats: [],
+      selectedLabels: [],
+      tagPanelCollapsed: false,
       // 视图模式：list 列表 / calendar 日历 / timeline 时间轴
       viewMode: 'list',
-      calendarYear: new Date().getFullYear(),
-      calendarMonth: new Date().getMonth(),
-      weekLabels: ['一', '二', '三', '四', '五', '六', '日'],
       loading: false,
       saving: false,
       exporting: false,
-      generatingReport: false,
-      reportVisible: false,
-      reportTitle: 'AI 待办月报',
-      reportPeriod: '',
-      reportHtml: '',
-      reportCached: false,
-      historyVisible: false,
-      historyLoading: false,
-      historyList: [],
-      historyType: 'todo-monthly',
       dialogVisible: false,
       detailVisible: false,
       detail: null,
       form: defaultForm(),
       predicting: false,
       prediction: null,
-      // 标签筛选 / 搜索 / 词云 / 日历选择器
       searchKeyword: '',
-      selectedLabels: [],
-      labelSearchKey: '',
-      labelPage: 0,
-      labelSlideDir: 'next',
-      tagPanelCollapsed: false,
-      wordCloudVisible: false,
-      wordCloudWords: [],
-      calendarPicker: ''
+      wordCloudVisible: false
     }
   },
   computed: {
@@ -807,186 +449,27 @@ export default {
     pendingNormalRecords() {
       return this.pendingRecords.filter(t => !t.top)
     },
-    // 已完成总数（全量，用于 Tab 角标；来自全量列表）
-    completedTotal() {
-      return this.todos.filter(t => t.completed).length
-    },
-    // 所有不重复的非空标签（来自后端全量统计）
-    allLabels() {
-      return this.labelStats.map(t => t.label)
-    },
-    // 标签面板按搜索关键字过滤后的显示列表
-    visibleLabels() {
-      if (!this.labelSearchKey) return this.allLabels
-      const kw = this.labelSearchKey.toLowerCase()
-      return this.allLabels.filter(l => l.toLowerCase().includes(kw))
-    },
-    // 标签总页数（每页 5 个）
-    totalLabelPages() {
-      return Math.max(1, Math.ceil(this.visibleLabels.length / 5))
-    },
-    // 当前页显示的标签（5 个一组）
-    pagedLabels() {
-      const start = this.labelPage * 5
-      return this.visibleLabels.slice(start, start + 5)
-    },
     labelOptions() {
       const options = new Set(DEFAULT_TAGS)
-      // 合并后端全量标签统计（含自定义标签）
-      this.allLabels.forEach(l => options.add(l))
-      this.todos.forEach(todo => {
-        if (todo.label) options.add(todo.label)
-      })
+      this.labelStats.forEach(item => options.add(item.name))
       if (this.form.label && !options.has(this.form.label)) {
         options.add(this.form.label)
       }
       return Array.from(options)
     },
-
-    // ===== 日历模式 =====
-    // 以开始时间的日期（yyyy-MM-dd）为 key 聚合待办：一个日期可挂载多条任务
-    todosByDate() {
-      const map = {}
-      this.todos.forEach(todo => {
-        if (!todo.startTime) return
-        const key = String(todo.startTime).slice(0, 10)
-        if (!map[key]) map[key] = []
-        map[key].push(todo)
-      })
-      Object.keys(map).forEach(key => {
-        map[key].sort((a, b) => String(a.startTime).localeCompare(String(b.startTime)))
-      })
-      return map
+    emptyDescription() {
+      const filtered = this.searchKeyword || this.selectedLabels.length < this.labelStats.length
+      return filtered ? '没有符合条件的待办' : '暂无待办，点击右上角新建'
     },
-    // 当前月份的 6×7 日历网格（周一起始），跨月日期置灰
-    calendarCells() {
-      const year = this.calendarYear
-      const month = this.calendarMonth
-      const first = new Date(year, month, 1)
-      let offset = first.getDay() - 1 // 周一为第一列：周日(offset=-1)归到末列
-      if (offset < 0) offset = 6
-      const start = new Date(year, month, 1 - offset)
-      const todayKey = this.formatDateKey(new Date())
-      const cells = []
-      for (let i = 0; i < 42; i++) {
-        const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
-        const key = this.formatDateKey(d)
-        cells.push({
-          key,
-          day: d.getDate(),
-          inMonth: d.getMonth() === month,
-          isToday: key === todayKey,
-          todos: this.todosByDate[key] || []
-        })
-      }
-      return cells
-    },
-
-    // ===== 时间轴模式 =====
-    // 未完成待办的时间范围（甘特横轴刻度依据）
-    ganttRange() {
-      let min = Infinity
-      let max = -Infinity
-      this.todos.forEach(todo => {
-        if (todo.completed || !todo.startTime || !todo.endTime) return
-        const s = this.parseLocal(todo.startTime).getTime()
-        const e = this.parseLocal(todo.endTime).getTime()
-        if (isNaN(s) || isNaN(e)) return
-        if (s < min) min = s
-        if (e > max) max = e
-      })
-      if (min === Infinity || max === -Infinity) return null
-      const startDate = new Date(min)
-      const endDate = new Date(max)
-      const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime()
-      const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1).getTime()
-      return { start, end, span: Math.max(1, end - start) }
-    },
-    // 未完成待办：按开始时间排序，分配颜色并计算甘特条位置
-    timelineTodos() {
-      const items = []
-      this.todos.forEach(todo => {
-        if (todo.completed || !todo.startTime || !todo.endTime) return
-        const s = this.parseLocal(todo.startTime).getTime()
-        const e = this.parseLocal(todo.endTime).getTime()
-        if (isNaN(s) || isNaN(e)) return
-        items.push({ todo, s, e })
-      })
-      items.sort((a, b) => a.s - b.s)
-      const range = this.ganttRange
-      return items.map((it, index) => {
-        let left = 0
-        let width = 100
-        if (range) {
-          left = Math.min(100, Math.max(0, (it.s - range.start) / range.span * 100))
-          const right = Math.min(100, Math.max(0, (it.e - range.start) / range.span * 100))
-          width = Math.max(1.5, right - left)
-        }
-        return Object.assign({}, it.todo, {
-          color: TIMELINE_COLORS[index % TIMELINE_COLORS.length],
-          left,
-          width
-        })
-      })
-    },
-    // 甘特横轴刻度（5 等分）
-    ganttTicks() {
-      const range = this.ganttRange
-      if (!range) return []
-      const ticks = []
-      for (let i = 0; i <= 4; i++) {
-        const d = new Date(range.start + range.span * i / 4)
-        ticks.push({
-          left: i * 25,
-          label: (d.getMonth() + 1) + '月' + d.getDate() + '日'
-        })
-      }
-      return ticks
-    },
-    // “今天”竖线位置，不在时间范围内则不显示
-    ganttTodayLeft() {
-      const range = this.ganttRange
-      if (!range) return null
-      const now = Date.now()
-      if (now < range.start || now > range.end) return null
-      return (now - range.start) / range.span * 100
-    },
-    // 时间节点事件流：开始/截止混排，按时间先后排列
-    milestoneEvents() {
-      const events = []
-      this.timelineTodos.forEach(todo => {
-        events.push({ todo, type: 'start', time: String(todo.startTime) })
-        events.push({ todo, type: 'end', time: String(todo.endTime) })
-      })
-      events.sort((a, b) => {
-        const diff = this.parseLocal(a.time).getTime() - this.parseLocal(b.time).getTime()
-        if (diff !== 0) return diff
-        if (a.type !== b.type) return a.type === 'start' ? -1 : 1
-        return String(a.todo.title).localeCompare(String(b.todo.title))
-      })
-      const pad = n => String(n).padStart(2, '0')
-      return events.map(ev => {
-        const d = this.parseLocal(ev.time)
-        return Object.assign({}, ev, {
-          dateText: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()),
-          shortDate: (d.getMonth() + 1) + '月' + d.getDate() + '号',
-          timeText: pad(d.getHours()) + ':' + pad(d.getMinutes())
-        })
-      })
+    doneEmptyDescription() {
+      const filtered = this.searchKeyword || this.selectedLabels.length < this.labelStats.length
+      return filtered ? '没有符合条件的已完成待办' : '暂无已完成的待办'
     }
-  },
-  created() {
-    // 全量数据（日历/时间轴用）
-    this.loadTodos()
-    // 列表第一页 + 标签统计 + 回收站
-    this.fetchPage('pending')
-    this.fetchLabelStats()
-    this.fetchTrash()
   },
   watch: {
     // 搜索关键字防抖 300ms 后回到第 1 页重新查询
     searchKeyword() {
-      this.scheduleReload()
+      this.reloadDebounced()
     },
     // 勾选标签变化立即重新查询
     selectedLabels() {
@@ -994,26 +477,26 @@ export default {
       this.donePageNum = 1
       this.doneLoaded = false
       this.fetchActivePage()
-    },
-    // 标签统计变化：首次全选，后续只勾选新出现的标签
-    labelStats(newStats, oldStats) {
-      if (!oldStats || oldStats.length === 0) {
-        this.selectedLabels = this.allLabels.slice()
-      } else {
-        const oldLabels = oldStats.map(t => t.label)
-        const newLabels = this.allLabels.filter(l => !oldLabels.includes(l))
-        if (newLabels.length) {
-          this.selectedLabels = [...this.selectedLabels, ...newLabels]
-        }
-      }
-    },
-    // 搜索标签时重置到第一页
-    labelSearchKey() {
-      this.labelPage = 0
     }
   },
+  created() {
+    this.reloadDebounced = debounce(() => {
+      this.pendingPageNum = 1
+      this.donePageNum = 1
+      this.fetchActivePage()
+    }, 300)
+    this.fetchCounts()
+    this.fetchPage('pending')
+    this.fetchLabelStats()
+  },
+  beforeUnmount() {
+    this.reloadDebounced.cancel()
+  },
   methods: {
-    // 构造分页查询参数（关键字 + 未勾选标签下沉后端排除）
+    formatMinute,
+
+    // ===== 查询 =====
+    /** 构造分页查询参数（关键字 + 未勾选标签下沉后端排除） */
     buildPageParams(status) {
       const params = {
         status,
@@ -1021,69 +504,67 @@ export default {
         pageSize: this.pageSize
       }
       if (this.searchKeyword) params.keyword = this.searchKeyword
-      // 未勾选的标签 = 全部标签 - 已勾选标签
-      const excluded = this.allLabels.filter(l => !this.selectedLabels.includes(l))
+      const excluded = this.labelStats
+        .map(item => item.name)
+        .filter(name => !this.selectedLabels.includes(name))
       if (excluded.length) params.excludeLabel = excluded
       return params
     },
-    // 拉取分页待办：status=pending（进行中）/ done（已完成）
+
+    /** 拉取分页待办：status=pending（进行中）/ done（已完成） */
     async fetchPage(status) {
       const isDone = status === 'done'
       this.loading = true
       try {
-        const res = await this.$http.get('/api/todo/page', { params: this.buildPageParams(status) })
-        if (res.data.code === 200) {
-          const data = res.data.data
-          const records = data.records || []
-          if (isDone) {
-            this.doneRecords = records
-            this.doneTotal = data.total || 0
-            this.doneLoaded = true
-            // 删除最后一条导致空页时自动回退一页
-            if (!records.length && this.doneTotal > 0 && this.donePageNum > 1) {
-              this.donePageNum -= 1
-              return this.fetchPage('done')
-            }
-          } else {
-            this.pendingRecords = records
-            this.pendingTotal = data.total || 0
-            if (!records.length && this.pendingTotal > 0 && this.pendingPageNum > 1) {
-              this.pendingPageNum -= 1
-              return this.fetchPage('pending')
-            }
+        const data = await todoApi.page(this.buildPageParams(status))
+        const records = data.records || []
+        if (isDone) {
+          this.doneRecords = records
+          this.doneTotal = data.total || 0
+          this.doneLoaded = true
+          // 删除最后一条导致空页时自动回退一页
+          if (!records.length && this.doneTotal > 0 && this.donePageNum > 1) {
+            this.donePageNum -= 1
+            return this.fetchPage('done')
+          }
+        } else {
+          this.pendingRecords = records
+          this.pendingTotal = data.total || 0
+          if (!records.length && this.pendingTotal > 0 && this.pendingPageNum > 1) {
+            this.pendingPageNum -= 1
+            return this.fetchPage('pending')
           }
         }
       } catch (err) {
-        this.handleError(err)
+        notifyError(err, '加载待办失败')
       } finally {
         this.loading = false
       }
     },
-    // 拉取当前 Tab 对应的页
+
+    /** 拉取当前 Tab 对应的页 */
     fetchActivePage() {
       if (this.activeTab === 'done') this.fetchPage('done')
       else if (this.activeTab === 'todos') this.fetchPage('pending')
     },
-    // 拉取全量标签统计
+
+    /** 轻量计数（Tab 角标） */
+    async fetchCounts() {
+      try {
+        this.counts = (await todoApi.counts()) || this.counts
+      } catch (err) {
+        // 计数失败不影响主流程
+      }
+    },
+
     async fetchLabelStats() {
       try {
-        const res = await this.$http.get('/api/todo/labels')
-        if (res.data.code === 200) {
-          this.labelStats = res.data.data || []
-        }
+        this.labelStats = await loadLabelStats()
       } catch (err) {
         // 标签统计失败不阻断主流程
       }
     },
-    // 搜索输入防抖
-    scheduleReload() {
-      clearTimeout(this._searchTimer)
-      this._searchTimer = setTimeout(() => {
-        this.pendingPageNum = 1
-        this.donePageNum = 1
-        this.fetchActivePage()
-      }, 300)
-    },
+
     onPendingPageChange(page) {
       this.pendingPageNum = page
       this.fetchPage('pending')
@@ -1098,73 +579,29 @@ export default {
       this.donePageNum = 1
       this.fetchActivePage()
     },
-    // 标签轮播：上一页
-    prevLabelPage() {
-      if (this.labelPage > 0) {
-        this.labelSlideDir = 'prev'
-        this.labelPage--
-      }
-    },
-    // 标签轮播：下一页
-    nextLabelPage() {
-      if (this.labelPage < this.totalLabelPages - 1) {
-        this.labelSlideDir = 'next'
-        this.labelPage++
-      }
-    },
-    // 统计某标签下的待办数（全量，来自后端）
-    labelCount(label) {
-      const item = this.labelStats.find(t => t.label === label)
-      return item ? item.count : 0
-    },
-    // 去除 HTML 标签（词云已在后端处理，保留供其他展示复用）
-    stripHtml(html) {
-      const div = document.createElement('div')
-      div.innerHTML = html
-      return div.textContent || div.innerText || ''
-    },
-    // 打开词云弹窗：数据由后端全量统计
-    async openWordCloud() {
-      try {
-        const res = await this.$http.get('/api/todo/wordcloud', { params: { limit: 50 } })
-        if (res.data.code === 200) {
-          this.wordCloudWords = res.data.data || []
-          this.wordCloudVisible = true
-        }
-      } catch (err) {
-        this.$message.error('词云生成失败')
-      }
-    },
-    wordSize(value, max) {
-      if (!max) return 14
-      return Math.round(12 + (value / max) * 24)
-    },
-    wordMax() {
-      return this.wordCloudWords.length ? this.wordCloudWords[0].value : 1
-    },
-    wcColor(value, max) {
-      const ratio = max ? value / max : 0
-      if (ratio > 0.66) return '#e6a23c'
-      if (ratio > 0.33) return '#409eff'
-      return '#909399'
-    },
-    // 日历年月选择器变化
-    onCalendarPickerChange(val) {
-      if (!val) return
-      const [y, m] = val.split('-').map(Number)
-      this.calendarYear = y
-      this.calendarMonth = m - 1
-    },
-    // 切换 Tab：回收站拉全量，已完成首次进入懒加载分页
+
+    /** 切换 Tab：回收站懒加载，已完成进入时加载 */
     onTabChange(tab) {
       if (tab === 'trash') {
-        this.fetchTrash()
+        if (!this.trashLoaded) this.fetchTrash()
       } else if (tab === 'done') {
         this.fetchPage('done')
       } else if (tab === 'todos') {
         this.fetchPage('pending')
       }
     },
+
+    /** 数据变更后统一刷新：当前列表 + 计数 + 标签统计 +（已加载的）回收站与日历/时间轴 */
+    reloadAfterChange() {
+      this.fetchCounts()
+      this.fetchPage('pending')
+      if (this.doneLoaded) this.fetchPage('done')
+      if (this.trashLoaded) this.fetchTrash()
+      this.fetchLabelStats()
+      if (this.$refs.calendar) this.$refs.calendar.refresh()
+      if (this.$refs.timeline) this.$refs.timeline.refresh()
+    },
+
     // ===== 视图切换 =====
     toggleCalendarView() {
       this.viewMode = this.viewMode === 'calendar' ? 'list' : 'calendar'
@@ -1172,264 +609,35 @@ export default {
     toggleTimelineView() {
       this.viewMode = this.viewMode === 'timeline' ? 'list' : 'timeline'
     },
-    // ===== 日历月份切换（12 月右切进入下一年，1 月左切回到上一年）=====
-    prevMonth() {
-      if (this.calendarMonth === 0) {
-        this.calendarMonth = 11
-        this.calendarYear -= 1
-      } else {
-        this.calendarMonth -= 1
-      }
-    },
-    nextMonth() {
-      if (this.calendarMonth === 11) {
-        this.calendarMonth = 0
-        this.calendarYear += 1
-      } else {
-        this.calendarMonth += 1
-      }
-    },
-    goToday() {
-      const now = new Date()
-      this.calendarYear = now.getFullYear()
-      this.calendarMonth = now.getMonth()
-    },
-    formatDateKey(date) {
-      const pad = n => String(n).padStart(2, '0')
-      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
-    },
-    // 日历任务条颜色分类：已完成绿 / 逾期红 / 进行中蓝
-    chipClass(todo) {
-      if (todo.completed || todo.status === '已完成') return 'done'
-      if (todo.status === '逾期') return 'overdue'
-      return 'doing'
-    },
-    // AI 预测当前新任务的完成成功率
-    async predictSuccessRate() {
-      if (!this.canPredict) {
-        this.$message.warning('请先填写标题和开始/结束时间')
-        return
-      }
-      this.predicting = true
-      try {
-        const res = await this.$http.post('/api/ai/predict', {
-          title: this.form.title,
-          content: this.form.content || '',
-          label: this.form.label || null,
-          startTime: this.form.startTime,
-          endTime: this.form.endTime,
-          daily: this.form.daily,
-          top: this.form.top
-        })
-        if (res.data.code === 200) {
-          this.prediction = res.data.data
-        } else {
-          this.$message.error(res.data.message || '预测失败')
-        }
-      } catch (err) {
-        const msg = (err.response && err.response.data && err.response.data.message) || '预测失败，请稍后重试'
-        this.$message.error(msg)
-      } finally {
-        this.predicting = false
-      }
-    },
 
-    // 生成 AI 待办月报
-    async generateTodoReport() {
-      this.reportTitle = 'AI 待办月报'
-      this.reportVisible = true
-      this.generatingReport = true
-      this.reportCached = false
-      this.reportHtml = '<div style="color:#909399">AI 正在分析你近一个月的待办任务，请稍候...</div>'
-      this.reportPeriod = ''
-      try {
-        const res = await this.$http.get('/api/ai/report/todo')
-        if (res.data.code === 200) {
-          this.reportPeriod = res.data.data.period
-          this.reportCached = !!res.data.data.cached
-          this.reportHtml = renderMarkdown(res.data.data.content)
-        } else {
-          this.reportHtml = '<div style="color:#f56c6c">' + (res.data.message || '生成失败') + '</div>'
-        }
-      } catch (err) {
-        const msg = (err.response && err.response.data && err.response.data.message) || '生成失败，请稍后重试'
-        this.reportHtml = '<div style="color:#f56c6c">' + msg + '</div>'
-      } finally {
-        this.generatingReport = false
-      }
-    },
-
-    // 生成 AI 待办周报
-    async generateTodoWeeklyReport() {
-      this.reportTitle = 'AI 待办周报'
-      this.reportVisible = true
-      this.generatingReport = true
-      this.reportCached = false
-      this.reportHtml = '<div style="color:#909399">AI 正在分析你近一周的待办任务，请稍候...</div>'
-      this.reportPeriod = ''
-      try {
-        const res = await this.$http.get('/api/ai/report/todo/weekly')
-        if (res.data.code === 200) {
-          this.reportPeriod = res.data.data.period
-          this.reportCached = !!res.data.data.cached
-          this.reportHtml = renderMarkdown(res.data.data.content)
-        } else {
-          this.reportHtml = '<div style="color:#f56c6c">' + (res.data.message || '生成失败') + '</div>'
-        }
-      } catch (err) {
-        const msg = (err.response && err.response.data && err.response.data.message) || '生成失败，请稍后重试'
-        this.reportHtml = '<div style="color:#f56c6c">' + msg + '</div>'
-      } finally {
-        this.generatingReport = false
-      }
-    },
-
-    // 打开历史报告抽屉：默认显示当前报告类型
-    openHistory() {
-      const isWeekly = (this.reportTitle || '').includes('周报')
-      this.historyType = isWeekly ? 'todo-weekly' : 'todo-monthly'
-      this.historyVisible = true
-      this.loadHistory()
-    },
-    // 拉取历史报告列表
-    async loadHistory() {
-      this.historyLoading = true
-      try {
-        const res = await this.$http.get('/api/ai/report/history', {
-          params: { type: this.historyType, limit: 12 }
-        })
-        if (res.data.code === 200) {
-          this.historyList = res.data.data || []
-        } else {
-          this.$message.error(res.data.message || '加载历史失败')
-        }
-      } catch (err) {
-        if (!err.response || err.response.status !== 401) {
-          this.$message.error('加载历史失败')
-        }
-      } finally {
-        this.historyLoading = false
-      }
-    },
-    // 点击历史报告：填充到主弹窗展示
-    showHistoryReport(rep) {
-      this.reportTitle = 'AI 待办' + (rep.reportType === 'todo-weekly' ? '周报' : '月报') + '（历史）'
-      this.reportPeriod = rep.period || ''
-      this.reportCached = false
-      this.reportHtml = renderMarkdown(rep.content)
-      this.historyVisible = false
-      this.reportVisible = true
-    },
-    // 历史报告时间格式化（兼容 ISO 字符串与数组）
-    formatHistoryTime(t) {
-      if (!t) return ''
-      if (Array.isArray(t)) {
-        const [y, m, d, hh = 0, mm = 0] = t
-        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-      }
-      return String(t).replace('T', ' ').slice(0, 16)
-    },
-    reportTypeLabel(type) {
-      if (type === 'note-weekly') return '笔记周报'
-      if (type === 'note-monthly') return '笔记月报'
-      if (type === 'todo-weekly') return '待办周报'
-      if (type === 'todo-monthly') return '待办月报'
-      return type || '未知'
-    },
-
-    // 导出待办 CSV：blob 方式请求（自动携带 Token），从响应头解析文件名
-    async exportCsv() {
-      this.exporting = true
-      try {
-        const res = await this.$http.get('/api/todo/export/csv', { responseType: 'blob' })
-        const disposition = res.headers['content-disposition'] || ''
-        let filename = '待办导出.csv'
-        const match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
-        if (match) {
-          filename = decodeURIComponent(match[1])
-        }
-        const link = document.createElement('a')
-        link.href = URL.createObjectURL(res.data)
-        link.download = filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(link.href)
-        this.$message.success('待办已导出为 CSV 文件')
-      } catch (err) {
-        if (!err.response || err.response.status !== 401) {
-          this.$message.error('导出失败，请稍后重试')
-        }
-      } finally {
-        this.exporting = false
-      }
-    },
-    async loadTodos() {
-      this.loading = true
-      try {
-        const res = await this.$http.get('/api/todo/list')
-        if (res.data.code === 200) {
-          this.todos = res.data.data || []
-        } else {
-          this.$message.error(res.data.message || '加载待办失败')
-        }
-      } catch (err) {
-        this.handleError(err)
-      } finally {
-        this.loading = false
-      }
-    },
-    // 数据变更后统一刷新：日历全量 + 两个列表分页（已完成页加载过才刷）+ 标签统计
-    reloadAfterChange() {
-      this.loadTodos()
-      this.fetchPage('pending')
-      if (this.doneLoaded) this.fetchPage('done')
-      this.fetchLabelStats()
-    },
-    // 状态 -> 标签颜色：已完成绿色、逾期红色、进行中蓝色
-    statusType(status) {
-      if (status === '已完成') return 'success'
-      if (status === '逾期') return 'danger'
-      return 'primary'
-    },
-    // 标记完成 / 取消完成
+    // ===== 完成状态 =====
     async toggleComplete(todo) {
       const next = !todo.completed
       try {
-        const res = await this.$http.put(`/api/todo/${todo.id}/complete`, null, {
-          params: { completed: next }
-        })
-        if (res.data.code === 200) {
-          this.$message.success(next ? '已标记为完成' : '已取消完成')
-          // 详情弹窗打开时同步刷新详情数据
-          if (this.detailVisible && this.detail && this.detail.id === todo.id && res.data.data) {
-            this.detail = res.data.data
-          }
-          this.reloadAfterChange()
-        } else {
-          this.$message.error(res.data.message || '操作失败')
+        const updated = await todoApi.setCompleted(todo.id, next)
+        this.$message.success(next ? '已标记为完成' : '已取消完成')
+        // 详情弹窗打开时同步刷新详情数据
+        if (this.detailVisible && this.detail && this.detail.id === todo.id && updated) {
+          this.detail = updated
         }
+        this.reloadAfterChange()
       } catch (err) {
-        this.handleError(err)
-      }
-    },
-    // 打开详情（请求最新数据）
-    async openDetail(todo) {
-      try {
-        const res = await this.$http.get(`/api/todo/${todo.id}`)
-        if (res.data.code === 200) {
-          this.detail = res.data.data
-          this.detailVisible = true
-        } else {
-          this.$message.error(res.data.message || '加载详情失败')
-        }
-      } catch (err) {
-        this.handleError(err)
+        notifyError(err, '操作失败')
       }
     },
     toggleCompleteFromDetail() {
       if (this.detail) {
         this.toggleComplete(this.detail)
+      }
+    },
+
+    // ===== 详情 / 表单 =====
+    async openDetail(todo) {
+      try {
+        this.detail = await todoApi.detail(todo.id)
+        this.detailVisible = true
+      } catch (err) {
+        notifyError(err, '加载详情失败')
       }
     },
     editFromDetail() {
@@ -1459,9 +667,16 @@ export default {
       this.dialogVisible = true
     },
     handleDailyChange(value) {
-      if (!value) {
-        this.form.repeatUntil = ''
-      }
+      if (!value) this.form.repeatUntil = ''
+    },
+    resetForm() {
+      this.form = defaultForm()
+    },
+    repeatUntilDisabled(date) {
+      if (!this.form.startTime) return false
+      const start = parseLocal(this.form.startTime)
+      const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+      return date.getTime() < dayStart.getTime()
     },
     async saveTodo() {
       if (!this.form.title) {
@@ -1472,14 +687,14 @@ export default {
         this.$message.warning('请填写开始时间和结束时间')
         return
       }
-      const start = this.parseLocal(this.form.startTime)
-      const end = this.parseLocal(this.form.endTime)
+      const start = parseLocal(this.form.startTime)
+      const end = parseLocal(this.form.endTime)
       if (end.getTime() <= start.getTime()) {
         this.$message.warning('结束时间必须晚于开始时间')
         return
       }
       if (this.form.daily && this.form.repeatUntil) {
-        const repeatEnd = this.parseLocal(this.form.repeatUntil + ' 00:00')
+        const repeatEnd = parseLocal(this.form.repeatUntil + ' 00:00')
         const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate())
         if (repeatEnd < startDate) {
           this.$message.warning('每日重复截止日期不能早于开始日期')
@@ -1488,6 +703,7 @@ export default {
       }
 
       const payload = {
+        id: this.form.id,
         title: this.form.title,
         content: this.form.content || '',
         label: this.form.label || null,
@@ -1501,22 +717,19 @@ export default {
 
       this.saving = true
       try {
-        const url = this.form.id ? `/api/todo/${this.form.id}` : '/api/todo'
-        const request = this.form.id ? this.$http.put(url, payload) : this.$http.post(url, payload)
-        const res = await request
-        if (res.data.code === 200) {
-          this.$message.success(res.data.message || '保存成功')
-          this.dialogVisible = false
-          this.reloadAfterChange()
-        } else {
-          this.$message.error(res.data.message || '保存失败')
-        }
+        const saved = await todoApi.save(payload)
+        this.$message.success(this.form.id ? '修改成功' : '创建成功')
+        this.dialogVisible = false
+        this.reloadAfterChange()
+        return saved
       } catch (err) {
-        this.handleError(err)
+        notifyError(err, '保存失败')
       } finally {
         this.saving = false
       }
     },
+
+    // ===== 删除 / 回收站 =====
     removeTodo(todo) {
       this.$confirm(`确定删除待办"${todo.title}"吗？删除后可在回收站找回。`, '删除确认', {
         type: 'warning',
@@ -1525,47 +738,37 @@ export default {
       })
         .then(async () => {
           try {
-            const res = await this.$http.delete(`/api/todo/${todo.id}`)
-            if (res.data.code === 200) {
-              this.$message.success('已移入回收站')
-              this.reloadAfterChange()
-              this.fetchTrash()
-            } else {
-              this.$message.error(res.data.message || '删除失败')
-            }
+            await todoApi.remove(todo.id)
+            this.$message.success('已移入回收站')
+            this.reloadAfterChange()
+            if (this.trashLoaded) this.fetchTrash()
           } catch (err) {
-            this.handleError(err)
+            notifyError(err, '删除失败')
           }
         })
         .catch(() => {})
     },
-    // 拉取回收站待办列表
     async fetchTrash() {
+      this.trashLoading = true
       try {
-        const res = await this.$http.get('/api/todo/trash')
-        if (res.data.code === 200) {
-          this.trashTodos = res.data.data || []
-        }
+        this.trashTodos = (await todoApi.trash()) || []
+        this.trashLoaded = true
       } catch (err) {
         // 忽略 401（拦截器统一处理）
+      } finally {
+        this.trashLoading = false
       }
     },
-    // 从回收站恢复待办
     async restoreTodo(todo) {
       try {
-        const res = await this.$http.put(`/api/todo/restore/${todo.id}`)
-        if (res.data.code === 200) {
-          this.$message.success('恢复成功')
-          this.fetchTrash()
-          this.reloadAfterChange()
-        } else {
-          this.$message.error(res.data.message || '恢复失败')
-        }
+        await todoApi.restore(todo.id)
+        this.$message.success('恢复成功')
+        this.fetchTrash()
+        this.reloadAfterChange()
       } catch (err) {
-        this.handleError(err)
+        notifyError(err, '恢复失败')
       }
     },
-    // 彻底删除待办（不可恢复）
     permanentlyDeleteTodo(todo) {
       this.$confirm(`确定彻底删除待办"${todo.title}"吗？此操作不可恢复！`, '危险操作', {
         type: 'error',
@@ -1574,39 +777,58 @@ export default {
       })
         .then(async () => {
           try {
-            const res = await this.$http.delete(`/api/todo/permanent/${todo.id}`)
-            if (res.data.code === 200) {
-              this.$message.success('已彻底删除')
-              this.fetchTrash()
-            }
+            await todoApi.permanentRemove(todo.id)
+            this.$message.success('已彻底删除')
+            this.fetchTrash()
           } catch (err) {
-            this.handleError(err)
+            notifyError(err, '删除失败')
           }
         })
         .catch(() => {})
     },
-    repeatUntilDisabled(date) {
-      if (!this.form.startTime) return false
-      const start = this.parseLocal(this.form.startTime)
-      const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-      return date.getTime() < dayStart.getTime()
-    },
-    parseLocal(value) {
-      // "yyyy-MM-dd HH:mm" -> 本地时间 Date
-      return new Date(value.replace(' ', 'T'))
-    },
-    formatTime(value) {
-      if (!value) return ''
-      return String(value).replace('T', ' ').slice(0, 16)
-    },
-    resetForm() {
-      this.form = defaultForm()
-    },
-    handleError(err) {
-      // 401 已由响应拦截器统一处理
-      if (!err.response || err.response.status !== 401) {
-        this.$message.error((err.response && err.response.data && err.response.data.message) || err.message)
+
+    // ===== 导出 / AI =====
+    async exportCsv() {
+      this.exporting = true
+      try {
+        await downloadBlob(todoApi.exportFile(), '待办导出.csv')
+        this.$message.success('待办已导出为 CSV 文件')
+      } catch (err) {
+        notifyError(err, '导出失败，请稍后重试')
+      } finally {
+        this.exporting = false
       }
+    },
+
+    /** AI 预测当前新任务的完成成功率 */
+    async predictSuccessRate() {
+      if (!this.canPredict) {
+        this.$message.warning('请先填写标题和开始/结束时间')
+        return
+      }
+      this.predicting = true
+      try {
+        this.prediction = await aiApi.predict({
+          title: this.form.title,
+          content: this.form.content || '',
+          label: this.form.label || null,
+          startTime: this.form.startTime,
+          endTime: this.form.endTime,
+          daily: this.form.daily,
+          top: this.form.top
+        })
+      } catch (err) {
+        notifyError(err, '预测失败，请稍后重试')
+      } finally {
+        this.predicting = false
+      }
+    },
+
+    /** 状态 -> 标签颜色：已完成绿色、逾期红色、进行中蓝色 */
+    statusType(status) {
+      if (status === '已完成') return 'success'
+      if (status === '逾期') return 'danger'
+      return 'primary'
     }
   }
 }
@@ -1614,172 +836,62 @@ export default {
 
 <style scoped>
 .todo-page {
-  max-width: 980px;
+  max-width: 1000px;
   margin: 0 auto;
-  padding: 18px;
+  padding: 22px 20px 40px;
   text-align: left;
 }
-.report-period {
-  font-size: 13px;
-  color: #909399;
-  margin-bottom: 12px;
-}
-.report-cached-tip {
-  font-size: 12px;
-  color: #e6a23c;
-  background: #fdf6ec;
-  border: 1px solid #f5dab1;
-  border-radius: 4px;
-  padding: 4px 10px;
-  margin-bottom: 12px;
-}
-.report-content {
-  max-height: 60vh;
-  overflow-y: auto;
-  padding-right: 8px;
-  line-height: 1.8;
-  font-size: 14px;
-  color: #303133;
-}
-.report-content h2 {
-  font-size: 17px;
-  color: #2e74b5;
-  margin: 18px 0 10px;
-  padding-bottom: 6px;
-  border-bottom: 2px solid #e4e7ed;
-}
-.report-content h3 {
-  font-size: 15px;
-  color: #409eff;
-  margin: 14px 0 8px;
-}
-.report-content p {
-  margin: 8px 0;
-}
-.report-content ul, .report-content ol {
-  margin: 8px 0;
-  padding-left: 24px;
-}
-.report-content li {
-  margin: 4px 0;
-}
-.history-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-.history-body {
-  padding: 0 4px;
-}
-.history-card {
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-.history-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--el-color-primary);
-}
-.history-period {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 4px;
-}
-.history-type {
-  font-size: 12px;
-  color: #909399;
-}
-.history-click-tip {
-  font-size: 12px;
-  color: var(--el-color-primary);
-  margin-top: 6px;
-}
-.predict-box {
-  margin-top: 12px;
-  padding: 12px 14px;
-  background: #fdf6ec;
-  border: 1px solid #f5dab1;
-  border-radius: 6px;
-}
-.predict-rate {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.rate-num {
-  font-size: 22px;
-  font-weight: 700;
-}
-.rate-num.lv-高 { color: #67c23a; }
-.rate-num.lv-中 { color: #e6a23c; }
-.rate-num.lv-低 { color: #f56c6c; }
-.predict-reason {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #606266;
-  line-height: 1.6;
-}
-
 .page-heading {
   margin: 0 0 16px;
   font-size: 22px;
   font-weight: 700;
-  color: #303133;
+  color: var(--wb-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-
+.page-heading::before {
+  content: '';
+  width: 5px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--wb-gradient-brand);
+  display: inline-block;
+}
 .page-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 18px;
+  background: #fff;
+  border: 1px solid var(--wb-border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: var(--wb-card-shadow);
 }
-
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .todo-group {
   margin-bottom: 26px;
 }
-
 .group-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
   margin-bottom: 12px;
 }
-
-.todo-card {
-  margin-bottom: 12px;
+.pagination-bar {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 8px;
 }
-
-/* 逾期任务：卡片左侧红色提醒条 */
-.todo-overdue {
-  border-left: 4px solid var(--el-color-danger);
-}
-
-/* 已完成任务：整体淡化 */
-.todo-done {
-  opacity: 0.75;
-}
-
-/* 已完成标题：删除线 */
-.done-title {
-  text-decoration: line-through;
-  color: var(--el-text-color-placeholder);
-}
-
-.todo-title-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.overdue-text {
-  color: var(--el-color-danger);
-  font-weight: 600;
-}
-
-/* 待办详情弹窗 */
+/* 详情弹窗 */
 .todo-detail {
   text-align: left;
 }
@@ -1807,512 +919,46 @@ export default {
 .detail-content :deep(img) {
   max-width: 100%;
 }
-
-.todo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.todo-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.todo-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.todo-time {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
-}
-
-.repeat-tip {
-  color: var(--el-color-success);
-}
-
-.remind-tip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--el-color-warning);
-}
-
-.todo-content {
-  padding: 10px 12px;
-  border-left: 3px solid var(--el-border-color);
-  background: var(--el-fill-color-light);
-  border-radius: 0 4px 4px 0;
-  line-height: 1.7;
-  margin-bottom: 8px;
-}
-
-.todo-content :deep(img) {
-  max-width: 100%;
-}
-
-.todo-content :deep(blockquote) {
-  margin: 6px 0;
-  padding-left: 10px;
-  border-left: 3px solid var(--el-border-color);
-  color: var(--el-text-color-secondary);
-}
-
-.todo-meta {
-  font-size: 12px;
+.done-title {
+  text-decoration: line-through;
   color: var(--el-text-color-placeholder);
 }
-
+.overdue-text {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
 .label-tip {
   width: 100%;
   font-size: 12px;
   color: var(--el-text-color-placeholder);
   line-height: 1.4;
 }
-.trash-todo-card {
-  opacity: 0.85;
-  border-style: dashed;
-}
-
-/* ===== 日历模式 ===== */
-.calendar-view {
-  margin-bottom: 26px;
-}
-.calendar-card {
-  background: var(--el-bg-color);
-  border-radius: 10px;
-  padding: 18px;
-  box-shadow: var(--el-box-shadow-light);
-}
-.calendar-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-.calendar-center {
-  text-align: center;
-}
-.calendar-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-}
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.calendar-week {
-  text-align: center;
-  padding: 8px 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
-}
-.calendar-cell {
-  min-height: 106px;
-  padding: 6px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  border-left: 1px solid var(--el-border-color-lighter);
-}
-.calendar-cell:nth-child(7n + 1) {
-  border-left: none;
-}
-.cell-out {
-  background: var(--el-fill-color-lighter);
-}
-.cell-out .cell-day-num {
-  color: var(--el-text-color-placeholder);
-}
-.cell-day {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-.cell-day-num {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.cell-day-num.today {
-  background: var(--el-color-primary);
-  color: #fff;
-}
-.today-badge {
-  font-size: 11px;
-  color: var(--el-color-primary);
-}
-.cell-todos {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 72px;
-  overflow-y: auto;
-}
-.cell-todo {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border-left: 3px solid transparent;
-  cursor: pointer;
-  line-height: 1.5;
-}
-.cell-todo:hover {
-  filter: brightness(0.95);
-}
-.chip-time {
-  font-size: 11px;
-  opacity: 0.85;
-  flex-shrink: 0;
-}
-.chip-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chip-doing {
-  background: var(--el-color-primary-light-9);
-  border-left-color: var(--el-color-primary);
-  color: var(--el-color-primary);
-}
-.chip-done {
-  background: var(--el-color-success-light-9);
-  border-left-color: var(--el-color-success);
-  color: var(--el-color-success);
-}
-.chip-done .chip-title {
-  text-decoration: line-through;
-}
-.chip-overdue {
-  background: var(--el-color-danger-light-9);
-  border-left-color: var(--el-color-danger);
-  color: var(--el-color-danger);
-}
-.calendar-legend {
+/* AI 完成率预测 */
+.predict-box {
   margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-.legend-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 4px;
-}
-.legend-tip {
-  margin-left: auto;
-  color: var(--el-text-color-placeholder);
-}
-
-/* ===== 时间轴模式 ===== */
-.timeline-view {
-  margin-bottom: 26px;
-}
-.gantt-card,
-.milestone-card {
-  background: var(--el-bg-color);
-  border-radius: 10px;
-  padding: 18px 20px;
-  box-shadow: var(--el-box-shadow-light);
-  margin-bottom: 18px;
-}
-.view-title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  margin-bottom: 14px;
-}
-.view-sub {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--el-text-color-secondary);
-}
-.gantt-wrap {
-  display: flex;
-}
-.gantt-labels {
-  width: 180px;
-  flex-shrink: 0;
-}
-.gantt-axis-spacer {
-  height: 28px;
-}
-.gantt-label {
-  height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-right: 10px;
-  font-size: 13px;
-  color: var(--el-text-color-primary);
-}
-.gantt-label-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gantt-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.gantt-area {
-  flex: 1;
-  position: relative;
-  min-width: 0;
-}
-.gantt-axis {
-  height: 28px;
-  position: relative;
-  border-bottom: 1px dashed var(--el-border-color);
-}
-.gantt-tick {
-  position: absolute;
-  bottom: 4px;
-  transform: translateX(-50%);
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-bg-color);
-  padding: 0 4px;
-}
-.gantt-today-badge {
-  position: absolute;
-  top: 2px;
-  transform: translateX(-50%);
-  font-size: 11px;
-  line-height: 16px;
-  color: #fff;
-  background: var(--el-color-danger);
-  border-radius: 8px;
-  padding: 0 6px;
-}
-.gantt-track {
-  height: 36px;
-  position: relative;
-}
-.gantt-track:hover {
-  background: var(--el-fill-color-lighter);
-}
-.gantt-bar {
-  position: absolute;
-  top: 8px;
-  height: 20px;
-  min-width: 24px;
-  border-radius: 10px;
-  overflow: hidden;
-  line-height: 20px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-}
-.gantt-bar-text {
-  display: block;
-  padding: 0 8px;
-  font-size: 11px;
-  color: #fff;
-  white-space: nowrap;
-}
-.gantt-today-line {
-  position: absolute;
-  top: 28px;
-  bottom: 0;
-  width: 0;
-  border-left: 2px dashed var(--el-color-danger);
-  opacity: 0.7;
-  pointer-events: none;
-}
-.milestone-timeline {
-  padding: 4px 4px 0;
-}
-.milestone-timeline :deep(.el-timeline-item__node) {
-  width: 14px;
-  height: 14px;
-}
-.milestone-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 7px 12px;
+  padding: 12px 14px;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
   border-radius: 6px;
-  background: var(--el-fill-color-lighter);
-  transition: background 0.2s;
+  width: 100%;
 }
-.milestone-item:hover {
-  background: var(--el-fill-color);
+.predict-rate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
 }
-.milestone-date {
+.rate-num {
+  font-size: 22px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
-  flex-shrink: 0;
 }
-.milestone-title {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.milestone-time {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  flex-shrink: 0;
-}
-
-/* ===== 标签筛选面板 ===== */
-.pagination-bar {
-  display: flex;
-  justify-content: center;
-  margin: 24px 0 8px;
-}
-.tag-filter-panel {
-  background: #fff;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  margin: 12px 0;
-  overflow: hidden;
-}
-.tag-filter-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  cursor: pointer;
-  background: #f5f7fa;
-  user-select: none;
-}
-.tag-filter-head:hover {
-  background: #ecf5ff;
-}
-.tag-filter-title {
-  font-size: 14px;
+.rate-num.lv-高 { color: #67c23a; }
+.rate-num.lv-中 { color: #e6a23c; }
+.rate-num.lv-低 { color: #f56c6c; }
+.predict-reason {
+  margin-top: 8px;
+  font-size: 13px;
   color: #606266;
-  flex: 1;
-}
-.collapse-arrow {
-  transition: transform 0.2s;
-}
-.collapse-arrow.collapsed {
-  transform: rotate(-90deg);
-}
-.tag-filter-body {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.tag-filter-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.tag-carousel {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.tag-nav-btn {
-  flex-shrink: 0;
-  padding: 4px 8px;
-}
-.tag-page {
-  flex: 1;
-  overflow: hidden;
-}
-.tag-checkbox-row {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px 12px;
-}
-.tag-checkbox-item {
-  margin-right: 0;
-  display: flex;
-  align-items: center;
-}
-/* 推拉动画：下一页 */
-.tag-slide-next-enter-active,
-.tag-slide-next-leave-active,
-.tag-slide-prev-enter-active,
-.tag-slide-prev-leave-active {
-  transition: transform 0.3s ease;
-}
-.tag-slide-next-enter-from { transform: translateX(100%); }
-.tag-slide-next-leave-to { transform: translateX(-100%); }
-/* 推拉动画：上一页 */
-.tag-slide-prev-enter-from { transform: translateX(-100%); }
-.tag-slide-prev-leave-to { transform: translateX(100%); }
-.tag-count {
-  font-size: 12px;
-  color: #909399;
-  margin-left: 4px;
-}
-
-/* ===== 日历选择器 ===== */
-.calendar-picker-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 6px;
-}
-
-/* ===== 词云 ===== */
-.word-cloud {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 12px 16px;
-  padding: 24px 12px;
-  min-height: 260px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #ecf5ff 100%);
-  border-radius: 8px;
-}
-.wc-word {
-  cursor: default;
-  font-weight: 600;
-  transition: transform 0.15s;
-  display: inline-block;
-}
-.wc-word:hover {
-  transform: scale(1.15);
-}
-.wc-tip {
-  text-align: center;
-  color: #909399;
-  font-size: 12px;
-  margin-top: 12px;
+  line-height: 1.6;
 }
 </style>

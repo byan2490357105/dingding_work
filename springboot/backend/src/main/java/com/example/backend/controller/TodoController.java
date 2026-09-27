@@ -5,6 +5,7 @@ import com.example.backend.dto.TodoDTO;
 import com.example.backend.entity.Todo;
 import com.example.backend.service.TodoService;
 import com.example.backend.util.ExportUtil;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,8 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletResponse;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 待办任务接口，由 JwtInterceptor 统一校验登录用户。
@@ -33,10 +36,34 @@ public class TodoController {
         this.todoService = todoService;
     }
 
-    /** 查看当前用户所有待办 */
-    @GetMapping("/list")
-    public Result<List<TodoDTO>> list(@RequestAttribute("username") String username) {
-        return Result.success(todoService.listByUsername(username));
+    /**
+     * 轻量计数：pending / done / trash / total。
+     * 供列表页 Tab 角标使用，避免为拿计数而加载全量待办。
+     */
+    @GetMapping("/counts")
+    public Result<Map<String, Object>> counts(@RequestAttribute("username") String username) {
+        return Result.success(todoService.counts(username));
+    }
+
+    /**
+     * 轻量区间查询：日历 / 时间轴视图按需取数据，替代原来的全量 /list。
+     *
+     * @param start     区间起始日期（yyyy-MM-dd，含），与 end 同时省略表示「不限时间」
+     * @param end       区间结束日期（yyyy-MM-dd，含）
+     * @param overlap   false=按开始时间筛选（日历视图）；true=与区间有交集（时间轴视图）
+     * @param completed 完成状态过滤，省略表示不过滤
+     * @param limit     最大返回条数，默认 500（上限 1000）
+     */
+    @GetMapping("/range")
+    public Result<List<TodoDTO>> range(@RequestAttribute("username") String username,
+                                       @RequestParam(required = false)
+                                       @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate start,
+                                       @RequestParam(required = false)
+                                       @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate end,
+                                       @RequestParam(defaultValue = "false") boolean overlap,
+                                       @RequestParam(required = false) Boolean completed,
+                                       @RequestParam(defaultValue = "500") int limit) {
+        return Result.success(todoService.listByRange(username, start, end, overlap, completed, limit));
     }
 
     /**

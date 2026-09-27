@@ -1,18 +1,15 @@
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import './assets/theme.css'
 import App from './App.vue'
 import router from './router'
 import store from './store'
-import axios from './util/interceptor'
 
 const app = createApp(App)
 
 app.use(store)
 app.use(router)
 app.use(ElementPlus)
-
-// 全局 $http，等价于原项目的 Vue.prototype.$http = axios
-app.config.globalProperties.$http = axios
 
 app.mount('#app')

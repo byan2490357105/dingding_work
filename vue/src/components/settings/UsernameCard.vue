@@ -42,6 +42,7 @@
 <script>
 import { mapActions, mapState } from 'vuex'
 import { User } from '@element-plus/icons-vue'
+import { profileApi } from '../../api/user'
 
 export default {
   name: 'UsernameCard',
@@ -117,21 +118,14 @@ export default {
       }
       this.checking = true
       try {
-        const res = await this.$http.get('/api/profile/username-available', {
-          params: { username: value }
-        })
+        const available = await profileApi.usernameAvailable(value)
         this.usernameChecked = true
-        if (res.data.code === 200) {
-          this.usernameAvailable = res.data.data === true
-          this.usernameTip = this.usernameAvailable ? '该用户名可以使用' : '该用户名已被使用，请换一个'
-        } else {
-          this.usernameAvailable = false
-          this.usernameTip = res.data.message || '检查失败'
-        }
+        this.usernameAvailable = available === true
+        this.usernameTip = this.usernameAvailable ? '该用户名可以使用' : '该用户名已被使用，请换一个'
       } catch (err) {
         this.usernameChecked = true
         this.usernameAvailable = false
-        this.usernameTip = '检查失败，请稍后重试'
+        this.usernameTip = err.message || '检查失败，请稍后重试'
       } finally {
         this.checking = false
       }
@@ -150,20 +144,16 @@ export default {
         }
         this.savingUsername = true
         try {
-          const res = await this.$http.put('/api/profile/username', {
+          const data = await profileApi.updateUsername({
             newUsername: this.usernameForm.newUsername.trim()
           })
-          if (res.data.code === 200) {
-            this.userLogin(res.data.data)
-            this.$message.success('用户名修改成功')
-            this.usernameForm.newUsername = ''
-            this.usernameTip = ''
-            this.usernameChecked = false
-          } else {
-            this.$message.error(res.data.message || '修改失败')
-          }
+          this.userLogin(data)
+          this.$message.success('用户名修改成功')
+          this.usernameForm.newUsername = ''
+          this.usernameTip = ''
+          this.usernameChecked = false
         } catch (err) {
-          this.$message.error((err.response && err.response.data && err.response.data.message) || '修改失败')
+          this.$message.error(err.message || '修改失败')
         } finally {
           this.savingUsername = false
         }

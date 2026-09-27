@@ -37,12 +37,6 @@ public class NoteController {
         this.noteService = noteService;
     }
 
-    /** 查看当前登录用户的所有笔记，分为置顶 / 未置顶两个列表 */
-    @GetMapping
-    public Result<Map<String, List<Note>>> list(HttpServletRequest request) {
-        return Result.success(noteService.listMyNotes(currentUsername(request)));
-    }
-
     /**
      * 分页查询笔记（置顶优先）。
      *

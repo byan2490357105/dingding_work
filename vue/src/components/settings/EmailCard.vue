@@ -30,6 +30,7 @@
 
 <script>
 import { Message } from '@element-plus/icons-vue'
+import { profileApi } from '../../api/user'
 
 export default {
   name: 'EmailCard',
@@ -59,9 +60,9 @@ export default {
   methods: {
     async loadEmail() {
       try {
-        const res = await this.$http.get('/api/profile')
-        if (res.data.code === 200 && res.data.data) {
-          this.emailForm.email = res.data.data.email || ''
+        const data = await profileApi.info()
+        if (data) {
+          this.emailForm.email = data.email || ''
         }
       } catch (err) {
         // 加载失败不弹窗
@@ -72,16 +73,10 @@ export default {
         if (!valid) return
         this.savingEmail = true
         try {
-          const res = await this.$http.put('/api/profile/email', {
-            email: this.emailForm.email.trim()
-          })
-          if (res.data.code === 200) {
-            this.$message.success('邮箱保存成功')
-          } else {
-            this.$message.error(res.data.message || '保存失败')
-          }
+          await profileApi.updateEmail({ email: this.emailForm.email.trim() })
+          this.$message.success('邮箱保存成功')
         } catch (err) {
-          this.$message.error((err.response && err.response.data && err.response.data.message) || '保存失败')
+          this.$message.error(err.message || '保存失败')
         } finally {
           this.savingEmail = false
         }

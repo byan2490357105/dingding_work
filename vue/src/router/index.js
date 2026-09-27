@@ -1,12 +1,18 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Home from '../views/Home.vue'
-import Login from '../views/Login.vue'
-import Register from '../views/Register.vue'
-import Notes from '../views/Notes.vue'
-import Todo from '../views/Todo.vue'
-import Dashboard from '../views/Dashboard.vue'
-import OAuthCallback from '../views/OAuthCallback.vue'
-import Profile from '../views/Profile.vue'
+
+/**
+ * 视图组件全部改为动态 import：
+ * Vite 会把每个路由打成独立 chunk，首屏只加载当前页面所需代码，
+ * 而不是把 Notes / Todo / Dashboard / echarts 全部塞进入口包。
+ */
+const Home = () => import('../views/Home.vue')
+const Login = () => import('../views/Login.vue')
+const Register = () => import('../views/Register.vue')
+const Notes = () => import('../views/Notes.vue')
+const Todo = () => import('../views/Todo.vue')
+const Dashboard = () => import('../views/Dashboard.vue')
+const OAuthCallback = () => import('../views/OAuthCallback.vue')
+const Profile = () => import('../views/Profile.vue')
 
 const router = createRouter({
   // 保持与原项目一致的 hash 模式
@@ -60,7 +66,7 @@ const router = createRouter({
     },
     {
       path: '/settings/bindings',
-      redirect: to => ({ path: '/settings/profile', query: { tab: 'bindings' } })
+      redirect: () => ({ path: '/settings/profile', query: { tab: 'bindings' } })
     },
     {
       path: '/login',

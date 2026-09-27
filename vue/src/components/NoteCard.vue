@@ -59,6 +59,12 @@ function pad(n) {
 <style scoped>
 .note-card {
   margin-bottom: 16px;
+  border-radius: 12px;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+.note-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px rgba(46, 68, 120, 0.12) !important;
 }
 .note-head {
   display: flex;
@@ -73,19 +79,20 @@ function pad(n) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 0.15s ease;
 }
 .note-title-link {
   cursor: pointer;
 }
 .note-title-link:hover {
-  color: var(--el-color-primary);
+  color: var(--wb-primary-deep);
 }
 .note-content {
   cursor: pointer;
   min-height: 40px;
   max-height: 160px;
   overflow: hidden;
-  color: #606266;
+  color: #5a6376;
   font-size: 14px;
   line-height: 1.7;
   word-break: break-word;
@@ -100,11 +107,11 @@ function pad(n) {
   align-items: center;
   justify-content: space-between;
   margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid #ebeef5;
+  padding-top: 10px;
+  border-top: 1px dashed var(--wb-border);
 }
 .note-time {
-  color: #909399;
+  color: var(--wb-text-muted);
   font-size: 12px;
 }
 .note-actions {

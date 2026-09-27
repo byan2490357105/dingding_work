@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -109,28 +108,6 @@ public class NoteServiceImpl implements NoteService {
                 .distinct()
                 .collect(Collectors.toList());
         return valid.isEmpty() ? null : valid;
-    }
-
-    @Override
-    public Map<String, List<Note>> listMyNotes(String username) {
-        Long userId = requireUserId(username);
-
-        // 置顶列表
-        List<Note> pinned = noteMapper.selectList(baseWrapper(userId)
-                .eq(Note::getIsPinned, 1)
-                .orderByDesc(Note::getUpdateTime)
-                .orderByDesc(Note::getId));
-
-        // 未置顶列表
-        List<Note> normal = noteMapper.selectList(baseWrapper(userId)
-                .eq(Note::getIsPinned, 0)
-                .orderByDesc(Note::getUpdateTime)
-                .orderByDesc(Note::getId));
-
-        Map<String, List<Note>> result = new HashMap<>(4);
-        result.put("pinned", pinned);
-        result.put("normal", normal);
-        return result;
     }
 
     @Override

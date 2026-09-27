@@ -113,6 +113,8 @@ import {
   TitleComponent
 } from 'echarts/components'
 import VChart from 'vue-echarts'
+import { statsApi } from '../api/user'
+import { notifyError } from '../utils/notify'
 
 echarts.use([
   CanvasRenderer,
@@ -268,9 +270,8 @@ export default {
     async fetchDashboard() {
       this.loading = true
       try {
-        const res = await this.$http.get('/api/stats/dashboard')
-        if (res.data.code === 200 && res.data.data) {
-          const data = res.data.data
+        const data = await statsApi.dashboard()
+        if (data) {
           this.stats = {
             totalNotes: data.totalNotes || 0,
             totalTodos: data.totalTodos || 0,
@@ -281,13 +282,9 @@ export default {
             noteHeatmap: data.noteHeatmap || [],
             tagDistribution: data.tagDistribution || { notes: [], todos: [] }
           }
-        } else {
-          this.$message.error(res.data.message || '加载仪表盘失败')
         }
       } catch (err) {
-        if (!err.response || err.response.status !== 401) {
-          this.$message.error('加载仪表盘失败')
-        }
+        notifyError(err, '加载仪表盘失败')
       } finally {
         this.loading = false
       }
